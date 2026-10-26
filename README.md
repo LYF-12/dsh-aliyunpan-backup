@@ -29,13 +29,18 @@ https://github.com/<owner>/dsh-aliyunpan-backup/tree/main
 
 安装后 **重启 DSH**，在 设置 → 插件 里能看到本插件的图标与配置页。
 
-### 1.2 本机源码安装（开发用）
+### 1.2 本机源码安装（开发用，已实测）
+
+DSH 自带 CLI 就是官方的安装入口，它会把包写进 profile 的依赖并追加到该 profile 的 bundle 层：
 
 ```powershell
-# 在 DSH 的 profile 目录里把包 link 进去
-cd C:\Users\<你>\.dsh\profiles\desktop
-node "<DSH安装目录>\resources\runtime\primary-runtime\dependencies\pnpm\bin\pnpm.cjs" add link:<本仓库路径> --save-exact
+# DSH 安装目录下的 runtime\cli\bin\dsh.cmd
+& "C:\Users\<你>\AppData\Local\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd" `
+  plugin --profile desktop add link:D:\Code\deepseek\cs\dsh-aliyunpan-backup
 ```
+
+实测输出：`+ dsh-aliyunpan-backup 0.1.0 <- D:\Code\deepseek\cs\dsh-aliyunpan-backup`，
+profile 的 `dsh.profile.bundles` 自动追加 `dsh-aliyunpan-backup`。装完**重启 DSH**生效。
 
 > 注意：DSH 内置插件管理器的 update/install 对「已在 profile 里声明」的包会返回 `already-installed`（上游问题）。
 > 手动升级请用上面的 bundled pnpm，并把目标版本追加进 `pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude`。
@@ -58,7 +63,7 @@ node "<DSH安装目录>\resources\runtime\primary-runtime\dependencies\pnpm\bin\
 
 | 位置 | 内容 |
 | --- | --- |
-| 设置 → 插件 → 本插件 | 状态徽标（运行中 / 上次成功 / 上次失败）、最新快照、**立即备份并上传 / 只打包校验 / 取消 / 刷新**、打开完整配置页 |
+| 设置 → 插件 → 本插件（官方 keyed 席位 `plugins.bundle.config`） | 状态徽标（运行中 / 上次成功 / 上次失败）、最新快照、**立即备份并上传 / 只打包校验 / 取消 / 刷新**、打开完整配置页 |
 | 完整配置页 `/api/dsh-aliyunpan-backup/ui` | 配置表单、本地快照列表（逐份校验 / 解包）、实时运行日志 |
 
 配置项：
@@ -149,7 +154,7 @@ node test/e2e.mjs       # 真跑一遍：打包 → 加密 → 校验 → 读日
 
 ```
 lib/index.js        宿主半侧（name / inject:["webServer"] / apply → 7 条 exact 路由）
-lib/client.js       浏览器半侧（只 require react，挂 plugins.detail.section）
+lib/client.js       浏览器半侧（只 require react；挂 plugins.bundle.config 官方配置卡 + plugins.detail.section 详情区）
 lib/ui.html         完整配置页
 lib/config.mjs      配置读写 / 路径解析
 lib/runner.mjs      子进程任务（spawn、日志、状态）
