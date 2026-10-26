@@ -1,6 +1,6 @@
 {
   "name": "dsh-aliyunpan-backup",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "把 DSH 配置 / 插件装配 / 会话 / 附件打包成加密快照并同步到阿里云盘的 DSH 插件：设置→插件里有一个带图标的配置界面，一条命令完成打包、上传、校验、按份数清理。",
   "type": "module",
   "engines": {
