@@ -89,10 +89,17 @@
       <label class="field">KEY 文件路径
         <input type="text" id="keyFile" placeholder="留空 = 暂存目录/KEY.txt">
       </label>
+      <label class="field">解包输出目录（点「解包」还原到这里）
+        <input type="text" id="restoreDir" placeholder="留空 = 暂存目录\restore\<快照名>">
+      </label>
     </div>
     <label class="row" style="margin-top:12px; gap:8px">
       <input type="checkbox" id="includeFeishuFiles" style="width:auto">
       <span>收录飞书收到的文件（feishu\files，约 +270MB；默认不收录）</span>
+    </label>
+    <label class="row" style="gap:8px">
+      <input type="checkbox" id="includeCredentials" style="width:auto">
+      <span>收录登录凭据（<code>.credentials.yaml</code> / <code>.npmrc</code>；默认不收录，换机后需重新登录）</span>
     </label>
     <div class="row" style="margin-top:14px">
       <button id="btnSave" class="primary">保存配置</button>
@@ -154,7 +161,9 @@ function fillConfig(cfg) {
   $('aliyunpanExe').value = cfg.aliyunpanExe || '';
   $('dshHome').value = cfg.dshHome || '';
   $('keyFile').value = cfg.keyFile || '';
+  $('restoreDir').value = cfg.restoreDir || '';
   $('includeFeishuFiles').checked = cfg.includeFeishuFiles === true;
+  $('includeCredentials').checked = cfg.includeCredentials === true;
 }
 
 function renderSnapshots(list) {
@@ -207,7 +216,8 @@ async function run(mode) {
 
 async function restore(snapshot, verifyOnly) {
   try {
-    await api('/restore', { method: 'POST', body: JSON.stringify({ snapshot, verifyOnly }) });
+    const body = await api('/restore', { method: 'POST', body: JSON.stringify({ snapshot, verifyOnly }) });
+    $('lastResult').textContent = verifyOnly ? ('校验中：' + snapshot) : ('解包中 → ' + ((body && body.outDir) || '(默认目录)'));
     refresh();
   } catch (error) { $('err').textContent = String(error.message || error); }
 }
@@ -221,7 +231,9 @@ async function save() {
       aliyunpanExe: $('aliyunpanExe').value.trim(),
       dshHome: $('dshHome').value.trim(),
       keyFile: $('keyFile').value.trim(),
+      restoreDir: $('restoreDir').value.trim(),
       includeFeishuFiles: $('includeFeishuFiles').checked,
+      includeCredentials: $('includeCredentials').checked,
     }) });
     $('saveHint').textContent = '已保存 ' + new Date().toLocaleTimeString();
     refresh();

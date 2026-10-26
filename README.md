@@ -105,6 +105,8 @@ git add -A; git commit -m "your change"; git push
 | `dshHome` | `%USERPROFILE%\.dsh` | 要备份的 DSH 数据目录 |
 | `keyFile` | `<stagingDir>/KEY.txt` | 口令文件；首次运行自动生成 24 位随机口令 |
 | `includeFeishuFiles` | `false` | 是否收录 `feishu\files`（收到的文档/压缩包，约 +270MB） |
+| `includeCredentials` | `false` | 是否收录 `.credentials.yaml` / `.npmrc`（登录凭据）；默认不收，换机后重新登录 |
+| `restoreDir` | 空 | 「解包」输出目录；留空 = `<stagingDir>\restore\<快照名>` |
 
 配置保存在 `%USERPROFILE%\.dsh\dsh-aliyunpan-backup\config.json`（可用环境变量 `DSH_AB_HOME` 改数据目录）。
 
@@ -121,9 +123,35 @@ git add -A; git commit -m "your change"; git push
 | `sources` | 只收 ≤2 层小配置 |
 | 跳过 | `node_modules`、`.git`、`dist`、`.pnpm-store`、`cache`、`backups` |
 
-> **凭据**：`.credentials.yaml`（API key、设备令牌）位于 `.dsh` 根级，会随包一起被**加密**上传。若不想让它们离开本机，请把 `dshHome` 指向不含它的目录，或还原后自行剔除。
+> **凭据（默认不进包）**：`.credentials.yaml`（API key、设备令牌）与 `.npmrc` 默认**不收录**；勾选 `includeCredentials` 才收（仍会 AES-256-GCM 加密）。换机还原后按提示重新登录即可。
+>
+> **每次都是全量快照**：不做增量（否则跨版本/跨机恢复容易残缺），所以每次约 215MB（不含飞书文件）/ 486MB（含）；云端保留最近 `keep` 份，旧包自动删除。
 
 **实测体积**（2026-10-26，本机）：不含飞书文件约 215MB，含则约 486MB；上传约 5MB/s、下载约 0.4MB/s。
+
+### 4.1 只想同步「另一份内容」怎么办
+
+现在能调的维度（都在配置里，不用改代码）：
+
+| 想做的事 | 怎么配 |
+| --- | --- |
+| 不收飞书文件（省 270MB） | `includeFeishuFiles=false`（默认） |
+| 连登录凭据一起带走 | `includeCredentials=true` |
+| 备份另一台机器 / 另一个 `.dsh` | 改 `dshHome` 指向那个目录 |
+| 放到网盘另一个位置 | 改 `remoteDir`（会自动在其下建 `snapshots/`） |
+| 本地留更多/更少份数 | `stagingDir` + 手工清理；云端份数用 `keep` |
+
+**暂时不支持**按模块逐项勾选（比如「只要会话不要附件」）——采集规则固定在 `lib/scripts/build.mjs` 的 `INCLUDE_DIRS` / `SKIP_DIRS`，要改成自定义清单得改代码。
+
+### 4.2 多套方案并存
+
+插件只有一份配置，但可以起两个独立实例（不同数据目录 + 不同云端目录）互不干扰：
+
+```powershell
+$env:DSH_AB_HOME = "C:\Users\LYF\.dsh-backup-b"   # 各自的 config.json / KEY.txt / staging
+```
+
+不过同一台机器上通常没必要，`keep` 已经能保留历史版本。
 
 ---
 
@@ -157,7 +185,28 @@ node lib/scripts/restore.mjs --pkg "D:\DSH-Backup\snapshots\20261026T1512-full" 
 node lib/scripts/restore.mjs --pkg "D:\DSH-Backup\snapshots\20261026T1512-full" --key "D:\DSH-Backup\KEY.txt" --out "D:\restore-test"
 ```
 
-跨机器还原：把 `snapshots/<id>/` 和 `KEY.txt` 一起拷过去，先 `--verify-only` 再解包。
+界面里「解包」默认落到 `D:\DSH-Backup\restore\<快照名>`（可在配置里改 `restoreDir`），**不会直接覆盖 `.dsh`**——先看内容，再手工挑需要的目录复制回 `C:\Users\<你>\.dsh`。
+
+跨机器还原完整流程：
+
+```powershell
+# 0) 新机器上先登录网盘（只需一次）
+aliyunpan login
+
+# 1) 只看云端有哪些快照
+aliyunpan ls "/DeepSeek Harness/DSH-Backup/snapshots"
+
+# 2) 取一份（含 package.info.json + payload.enc）到本地暂存目录，名字必须保持 <id>
+aliyunpan download --saveto "D:\DSH-Backup\snapshots" "/DeepSeek Harness/DSH-Backup/snapshots/20261026T1512-full"
+
+# 3) 口令：把旧机器的 D:\DSH-Backup\KEY.txt 手工拷过来（丢了密文无解）
+
+# 4) 校验 + 解包
+node lib/scripts/restore.mjs --pkg "D:\DSH-Backup\snapshots\20261026T1512-full" --key "D:\DSH-Backup\KEY.txt" --verify-only
+node lib/scripts/restore.mjs --pkg "D:\DSH-Backup\snapshots\20261026T1512-full" --key "D:\DSH-Backup\KEY.txt" --out "D:\restore-20261026"
+```
+
+下载后把 `D:\DSH-Backup\snapshots\<id>` 放好，插件界面「本地快照」里就能看到它，直接点「校验 / 解包」即可。
 
 ---
 
