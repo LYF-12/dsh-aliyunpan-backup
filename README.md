@@ -205,9 +205,12 @@ node lib/scripts/restore.mjs --pkg "D:\DSH-Backup\snapshots\20261026T1512-full" 
 4. 取回快照（名字必须与云端 `<id>` 一致）：
 
 ```powershell
+aliyunpan config set -savedir "%USERPROFILE%\.dsh\dsh-aliyunpan-backup\staging\snapshots"
 aliyunpan ls "/DeepSeek Harness/DSH-Backup/snapshots"
-aliyunpan download --saveto "%USERPROFILE%\.dsh\dsh-aliyunpan-backup\staging\snapshots" "/DeepSeek Harness/DSH-Backup/snapshots/20261026T1512-full"
+aliyunpan download "/DeepSeek Harness/DSH-Backup/snapshots/<id>"
 ```
+
+> **下载被平台拦时怎么办**（2026-10-26 本机实测：账号「备份盘」且未开通三方权益包，`aliyunpan download` 一律报「下载文件失败 / 数据总量 0B」，而上传完全正常）：改用**阿里云盘官方客户端 / 网页**打开 `/DeepSeek Harness/DSH-Backup/snapshots/<id>/`，把 `payload.enc` 与 `package.info.json` 下到本机 `<staging>\snapshots\<id>\` 目录（目录名必须与云端 id 一致），后续「校验 / 解包」流程不变。插件只读本地文件，不依赖 CLI 下载。
 
 5. 插件界面「本地快照」里点「校验」→ 出现 `verify: ok=N bad=0` 说明口令与包匹配；再点「解包」
 
@@ -273,6 +276,8 @@ test/               smoke.mjs、e2e.mjs
 
 **Q：口令忘了 / `KEY.txt` 丢了？** 云端快照就永久解不开了（AES-256-GCM，无后门）。要么从旧机器再复制一次，要么从你自己的密码记录里找；都没有就只能重新开始备份。所以第一次生成口令后请立刻存一份到密码管理器。
 
+**Q：`aliyunpan download` 报「下载文件失败 / 数据总量 0B」？** 不是你的操作问题：备份盘、以及未开通「三方权益包」的账号，CLI 走的是第三方接口，平台只放行上传不放行下载。用阿里云盘官方客户端把 `payload.enc` 与 `package.info.json` 下载到 `<staging>\snapshots\<id>\` 即可，插件只读本地文件。
+
 **Q：新机器点「校验」报「口令文件不存在」？** 这是 0.2.0 有意加的前置检查。去配置页「口令」粘贴旧口令即可，别去改 `keyFile` 路径。
 
 **Q：为什么以前备份里 `profiles\<名字>\` 是空的？** 0.1.x 的采集规则只收 `profiles\` 根级文件，插件装配（`cordis.patch.yml`、`package.json`、锁文件）实际没进包；0.2.0 已修，现在会收 `profiles\<名字>\` 下的配置类文件（`node_modules` 仍排除）。
@@ -280,6 +285,11 @@ test/               smoke.mjs、e2e.mjs
 ---
 
 ## 10. 变更记录
+
+**0.2.2（2026-10-26）— 按实测修正下载说明**
+- 文档：`aliyunpan download --saveto` 在 v0.4.0 不存在，改成 `config set -savedir` + `download <路径>`
+- 文档 + UI：账号为「备份盘」或未开通三方权益包时，CLI 下载会被平台拒绝（上传不受影响），改用阿里云盘官方客户端下载 `payload.enc` / `package.info.json` 到 `<staging>\snapshots\<id>\`
+- 「找不到快照」错误补上可操作的下载提示
 
 **0.2.1（2026-10-26）— 口令与路径的安全兜底**
 - 修：设了 `DSH_AB_HOME`（隔离实例/多实例）时不再复用 `D:\DSH-Backup` 旧路径，避免串机、串口令
