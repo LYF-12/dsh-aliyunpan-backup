@@ -1,0 +1,11 @@
+# dsh bundle patch —— 把本插件挂进 DSH 配置树。
+#
+# insert 的 id 必须全局唯一且与包名一致（商城上架契约按它比对 entryIds）；
+# name 解析包入口 lib/index.js；package.json 声明了 dsh.client，
+# 所以 DSH 同时把本包扫描为浏览器插件，提供 /plugins/dsh-aliyunpan-backup/client.js。
+#
+# 注意：下面 "id: 值" 那一行不能写行尾注释（商城预检正则要求值后直接换行）。
+
+- insert:
+    - id: dsh-aliyunpan-backup
+      name: 'dsh-aliyunpan-backup'

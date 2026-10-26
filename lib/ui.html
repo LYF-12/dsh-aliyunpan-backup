@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>阿里云盘备份 · DSH 插件</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f8fa; --card: #ffffff; --fg: #1b1f27; --muted: #6b7280; --line: #e3e6ec;
+    --accent: #2f6feb; --ok: #157f3c; --bad: #b42318; --warn: #a15c07;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14161a; --card: #1c1f25; --fg: #e6e8ee; --muted: #9aa3b2; --line: #2b3038;
+            --accent: #6f9dff; --ok: #4ec98a; --bad: #ff7b72; --warn: #f0b429; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px; background: var(--bg); color: var(--fg);
+         font: 14px/1.55 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 0 0 12px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
+  .wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .grow { flex: 1 1 220px; min-width: 0; }
+  label.field { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+  input[type=text], input[type=number] { width: 100%; padding: 7px 9px; border-radius: 7px;
+        border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; }
+  button { padding: 7px 14px; border-radius: 7px; border: 1px solid var(--line);
+           background: var(--card); color: var(--fg); font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px;
+           font-size: 12px; border: 1px solid var(--line); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.run { background: var(--warn); } .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
+  .muted { color: var(--muted); }
+  .mono { font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; }
+  pre#log { margin: 0; padding: 12px; border-radius: 8px; background: #0d1117; color: #c9d1d9;
+            max-height: 320px; overflow: auto; font-size: 12px; line-height: 1.45; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .err { color: var(--bad); font-size: 13px; }
+  .split { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <h1>阿里云盘备份</h1>
+        <div class="muted">把 DSH 配置 / 插件装配 / 会话 / 附件打包加密后同步到阿里云盘，并可一键校验或还原。</div>
+      </div>
+      <span class="badge"><span id="dot" class="dot"></span><span id="stateText">读取中…</span></span>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button id="btnRun" class="primary">立即备份并上传</button>
+      <button id="btnVerify">只打包校验（不上传）</button>
+      <button id="btnCancel">取消</button>
+      <button id="btnRefresh">刷新</button>
+      <span id="lastResult" class="muted"></span>
+    </div>
+    <div id="err" class="err"></div>
+  </div>
+
+  <div class="card">
+    <h2>配置</h2>
+    <div class="split">
+      <label class="field">云端快照目录
+        <input type="text" id="remoteDir" placeholder="/DeepSeek Harness/DSH-Backup">
+      </label>
+      <label class="field">本地暂存目录（快照 + KEY.txt）
+        <input type="text" id="stagingDir" placeholder="D:\DSH-Backup">
+      </label>
+      <label class="field">保留云端份数（0 = 不清理）
+        <input type="number" id="keep" min="0" max="50" step="1">
+      </label>
+      <label class="field">aliyunpan 可执行文件
+        <input type="text" id="aliyunpanExe" placeholder="留空自动探测">
+      </label>
+      <label class="field">对应 DSH 目录
+        <input type="text" id="dshHome" placeholder="%USERPROFILE%\.dsh">
+      </label>
+      <label class="field">KEY 文件路径
+        <input type="text" id="keyFile" placeholder="留空 = 暂存目录/KEY.txt">
+      </label>
+    </div>
+    <label class="row" style="margin-top:12px; gap:8px">
+      <input type="checkbox" id="includeFeishuFiles" style="width:auto">
+      <span>收录飞书收到的文件（feishu\files，约 +270MB；默认不收录）</span>
+    </label>
+    <div class="row" style="margin-top:14px">
+      <button id="btnSave" class="primary">保存配置</button>
+      <span id="saveHint" class="muted"></span>
+    </div>
+    <div class="hint">口令（KEY.txt）只存在本机；云端 payload.enc 没有口令无法解开。第一次运行会自动生成 24 位随机口令。</div>
+  </div>
+
+  <div class="card">
+    <h2>本地快照</h2>
+    <table>
+      <thead><tr><th>快照</th><th>大小</th><th>时间</th><th></th></tr></thead>
+      <tbody id="snapBody"><tr><td colspan="4" class="muted">读取中…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>运行日志</h2>
+    <pre id="log">（暂无）</pre>
+    <div class="hint" id="logPath"></div>
+  </div>
+
+</div>
+<script>
+const BASE = '/api/dsh-aliyunpan-backup';
+const $ = (id) => document.getElementById(id);
+const fmtBytes = (n) => {
+  if (!n) return '-';
+  const mb = n / 1048576;
+  return mb >= 1 ? mb.toFixed(2) + ' MB' : (n / 1024).toFixed(1) + ' KB';
+};
+const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString() : '-');
+let timer = null;
+
+function setState(s) {
+  const running = s && s.running;
+  const job = s && s.job;
+  $('dot').className = 'dot ' + (running ? 'run' : job && job.phase === 'done' ? 'ok' : job && job.phase === 'failed' ? 'bad' : '');
+  $('stateText').textContent = running ? '正在运行 · ' + (job && job.mode) : job ? (job.phase === 'done' ? '空闲 · 上次成功' : '空闲 · 上次失败') : '空闲';
+  $('btnRun').disabled = !!running;
+  $('btnVerify').disabled = !!running;
+  $('btnCancel').disabled = !running;
+  if (job) {
+    $('lastResult').textContent = (job.finishedAt ? fmtTime(job.finishedAt) + ' · ' : '') + (job.result || '').slice(0, 120);
+  }
+}
+
+async function api(path, init) {
+  const res = await fetch(BASE + path, Object.assign({ headers: { 'content-type': 'application/json' } }, init || {}));
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body.ok === false) throw new Error(body.error || ('HTTP ' + res.status));
+  return body;
+}
+
+function fillConfig(cfg) {
+  $('remoteDir').value = cfg.remoteDir || '';
+  $('stagingDir').value = cfg.stagingDir || '';
+  $('keep').value = cfg.keep;
+  $('aliyunpanExe').value = cfg.aliyunpanExe || '';
+  $('dshHome').value = cfg.dshHome || '';
+  $('keyFile').value = cfg.keyFile || '';
+  $('includeFeishuFiles').checked = cfg.includeFeishuFiles === true;
+}
+
+function renderSnapshots(list) {
+  const body = $('snapBody');
+  if (!list || !list.length) {
+    body.innerHTML = '<tr><td colspan="4" class="muted">还没有本地快照</td></tr>';
+    return;
+  }
+  body.innerHTML = '';
+  for (const s of list) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td class="mono">' + s.id + '</td><td>' + fmtBytes(s.bytes) + '</td><td class="muted">' + fmtTime(s.mtime) + '</td><td></td>';
+    const cell = tr.lastElementChild;
+    const v = document.createElement('button');
+    v.textContent = '校验';
+    v.onclick = () => restore(s.id, true);
+    const e = document.createElement('button');
+    e.textContent = '解包';
+    e.style.marginLeft = '6px';
+    e.onclick = () => restore(s.id, false);
+    cell.append(v, e);
+    body.appendChild(tr);
+  }
+}
+
+async function refresh() {
+  try {
+    const data = await api('/status');
+    setState(data.state);
+    fillConfig(data.view);
+    renderSnapshots(data.snapshots);
+    $('log').textContent = (data.log && data.log.text) || '（暂无）';
+    $('logPath').textContent = data.log && data.log.path ? '日志文件：' + data.log.path : '';
+    $('err').textContent = '';
+    if (data.state && data.state.running) {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(refresh, 1500);
+    }
+  } catch (error) {
+    $('err').textContent = String(error.message || error);
+  }
+}
+
+async function run(mode) {
+  try {
+    await api('/run', { method: 'POST', body: JSON.stringify({ mode }) });
+    refresh();
+  } catch (error) { $('err').textContent = String(error.message || error); }
+}
+
+async function restore(snapshot, verifyOnly) {
+  try {
+    await api('/restore', { method: 'POST', body: JSON.stringify({ snapshot, verifyOnly }) });
+    refresh();
+  } catch (error) { $('err').textContent = String(error.message || error); }
+}
+
+async function save() {
+  try {
+    await api('/config', { method: 'POST', body: JSON.stringify({
+      remoteDir: $('remoteDir').value.trim(),
+      stagingDir: $('stagingDir').value.trim(),
+      keep: Number($('keep').value),
+      aliyunpanExe: $('aliyunpanExe').value.trim(),
+      dshHome: $('dshHome').value.trim(),
+      keyFile: $('keyFile').value.trim(),
+      includeFeishuFiles: $('includeFeishuFiles').checked,
+    }) });
+    $('saveHint').textContent = '已保存 ' + new Date().toLocaleTimeString();
+    refresh();
+  } catch (error) { $('err').textContent = String(error.message || error); }
+}
+
+$('btnRun').onclick = () => run('upload');
+$('btnVerify').onclick = () => run('verify');
+$('btnCancel').onclick = async () => { try { await api('/cancel', { method: 'POST' }); refresh(); } catch (e) { $('err').textContent = String(e.message || e); } };
+$('btnRefresh').onclick = refresh;
+$('btnSave').onclick = save;
+refresh();
+</script>
+</body>
+</html>
