@@ -227,16 +227,21 @@ const textOf = (node) => {
 const blob = textOf(inner);
 assert.match(blob, /阿里云盘备份/, 'panel shows title');
 assert.match(blob, /立即备份并上传/, 'panel shows run button');
-assert.match(blob, /打开完整配置页/, 'panel shows the full page link');
+assert.match(blob, /打开完整配置页/, 'panel shows the full page toggle');
+assert.match(blob, /复制配置页地址/, 'panel offers a copy-link fallback');
+// 宿主里 target=_blank 会被弹窗策略拦掉：配置页改为卡片内嵌 iframe（点击前不渲染），
+// 因此这里断言「没有外链 anchor」。
 const hrefs = [];
+const frames = [];
 const walk = (node) => {
   if (node === null || node === undefined || node === false) return;
   if (Array.isArray(node)) return node.forEach(walk);
   if (typeof node !== 'object') return;
   if (node.props && typeof node.props.href === 'string') hrefs.push(node.props.href);
+  if (node.type === 'iframe' && node.props && typeof node.props.src === 'string') frames.push(node.props.src);
   walk(node.props && node.props.children);
 };
 walk(inner);
-assert.deepEqual(hrefs, ['/api/dsh-aliyunpan-backup/ui'], 'panel links the full page');
+assert.deepEqual(hrefs, [], 'no target=_blank anchor (popup-blocked in the host)');
 
 console.log('SMOKE OK  routes=' + routes.size + '  home=' + tmpHome);
