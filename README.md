@@ -45,6 +45,19 @@ profile 的 `dsh.profile.bundles` 自动追加 `dsh-aliyunpan-backup`。装完**
 > 注意：DSH 内置插件管理器的 update/install 对「已在 profile 里声明」的包会返回 `already-installed`（上游问题）。
 > 手动升级请用上面的 bundled pnpm，并把目标版本追加进 `pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude`。
 
+### 1.3 发布到你自己的 GitHub 仓库
+
+```powershell
+cd D:\Code\deepseek\cs\dsh-aliyunpan-backup
+# 先在 GitHub 网页建一个空仓库（不要勾 README/.gitignore/LICENSE）
+git remote add origin https://github.com/<你的用户名>/dsh-aliyunpan-backup.git
+git branch -M main
+git push -u origin main
+```
+
+推送时 GitHub 要凭据：密码处填 **Personal Access Token**（fine-grained，权限 Contents = Read and write）。
+推完把 `package.json` 里的 `repository.url` 改成你的仓库地址（可选，只影响展示）。
+
 ---
 
 ## 2. 依赖：aliyunpan CLI
