@@ -24,7 +24,7 @@
   .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
   .grow { flex: 1 1 220px; min-width: 0; }
   label.field { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
-  input[type=text], input[type=number] { width: 100%; padding: 7px 9px; border-radius: 7px;
+  input[type=text], input[type=number], select { width: 100%; padding: 7px 9px; border-radius: 7px;
         border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; }
   button { padding: 7px 14px; border-radius: 7px; border: 1px solid var(--line);
            background: var(--card); color: var(--fg); font: inherit; cursor: pointer; }
@@ -106,6 +106,48 @@
       <span id="saveHint" class="muted"></span>
     </div>
     <div class="hint">口令（KEY.txt）只存在本机；云端 payload.enc 没有口令无法解开。第一次运行会自动生成 24 位随机口令。</div>
+  </div>
+
+  <div class="card">
+    <h2>同步（多机共享同一份数据）</h2>
+    <div class="hint" style="margin:0 0 10px">
+      和上面的「加密快照」是两条路：同步不打包、不加密，按目录逐文件增量复制，云端能直接看到原始目录结构。
+      <strong>同一时间只在一台机器上同步</strong>：常用那台当「主机」上传，其它机器当「从机」拉取；
+      拉取会写进本机 <code>.dsh</code>，建议先退出 DSH 再拉。
+    </div>
+    <div class="split">
+      <label class="field">本机角色
+        <select id="syncMode">
+          <option value="upload">主机：本机 → 云盘（上传）</option>
+          <option value="download">从机：云盘 → 本机（拉取）</option>
+        </select>
+      </label>
+      <label class="field">云端同步目录
+        <input type="text" id="syncDir" placeholder="/DeepSeek Harness/DSH-Sync">
+      </label>
+      <label class="field">机器标识（云端留痕用）
+        <input type="text" id="syncMachine" placeholder="留空 = 计算机名">
+      </label>
+      <label class="field">互斥提醒窗口（分钟，0 = 不检查）
+        <input type="number" id="syncLockMinutes" min="0" max="1440" step="1">
+      </label>
+      <label class="field">下载暂存目录（aliyunpan 先下到这里）
+        <input type="text" id="syncDlDir" placeholder="留空 = 插件数据目录/sync-dl">
+      </label>
+    </div>
+    <label class="hint" style="display:block;margin-top:8px">
+      <input type="checkbox" id="syncPrune"> 拉取时删除本机多余文件（严格镜像；默认只增不删）
+    </label>
+    <div id="syncDirs" class="row" style="margin-top:12px"></div>
+    <div class="row" style="margin-top:12px">
+      <button id="btnSyncPlan">预演（只统计，不动云端）</button>
+      <button id="btnSyncRun" class="primary">开始同步</button>
+      <button id="btnSyncCancel">取消</button>
+      <button id="btnSyncSave">保存同步设置</button>
+      <span id="syncHint" class="muted"></span>
+    </div>
+    <div id="syncTable" class="hint"></div>
+    <pre id="syncLog" style="margin-top:10px">（暂无）</pre>
   </div>
 
   <div class="card">
@@ -315,6 +357,142 @@ async function save() {
   } catch (error) { $('err').textContent = String(error.message || error); }
 }
 
+// ---- 同步 ----
+const SYNC_DIR_LABEL = {
+  sessions: '会话',
+  attachments: '附件',
+  storages: '工作区/定时/缓存索引',
+  'task-board': '任务板',
+  skins: '皮肤',
+  pets: '桌宠素材',
+  eda: 'EDA 快照',
+  sources: '源码',
+  backups: '备份',
+  'dsh-usage': '用量统计',
+};
+let syncTimer = null;
+
+function renderSyncDirs(data) {
+  const chosen = new Set((data.dirs || []).map((d) => d.name));
+  const box = $('syncDirs');
+  box.innerHTML = '';
+  for (const name of data.choices || []) {
+    const label = document.createElement('label');
+    label.className = 'row';
+    label.style.gap = '6px';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = name;
+    cb.checked = chosen.has(name);
+    cb.style.width = 'auto';
+    cb.onchange = saveSyncQuiet;
+    const span = document.createElement('span');
+    span.textContent = (SYNC_DIR_LABEL[name] || name) + '（' + name + '）';
+    label.append(cb, span);
+    box.appendChild(label);
+  }
+}
+
+function pickedSyncDirs() {
+  return [...document.querySelectorAll('#syncDirs input[type=checkbox]')]
+    .filter((cb) => cb.checked)
+    .map((cb) => cb.value);
+}
+
+function fillSync(data) {
+  $('syncMode').value = data.mode || 'upload';
+  $('syncDir').value = data.dir || '';
+  $('syncMachine').value = data.machine || '';
+  $('syncLockMinutes').value = data.lockMinutes;
+  if (document.activeElement !== $('syncDlDir')) $('syncDlDir').value = data.dlDir || '';
+  $('syncPrune').checked = data.prune === true;
+  renderSyncDirs(data);
+  $('syncLog').textContent = (data.log && data.log.text) || '（暂无）';
+  const st = data.state || {};
+  const job = st.job;
+  if (st.running) {
+    $('syncHint').textContent = '同步中… ' + ((job && job.mode) || '');
+  } else if (job && job.result) {
+    $('syncHint').textContent = (job.phase === 'done' ? '上次成功 · ' : '上次失败 · ') + job.result;
+  } else if (st.last && st.last.at) {
+    $('syncHint').textContent = '上次 ' + fmtTime(st.last.at) + ' · ' + st.last.mode + ' · files=' + st.last.files;
+  } else {
+    $('syncHint').textContent = '尚未同步';
+  }
+  $('btnSyncRun').disabled = !!st.running;
+  $('btnSyncCancel').disabled = !st.running;
+  if (st.running) {
+    if (syncTimer) clearTimeout(syncTimer);
+    syncTimer = setTimeout(refreshSync, 1500);
+  }
+}
+
+async function refreshSync() {
+  try {
+    fillSync(await api('/sync'));
+  } catch (error) {
+    $('syncTable').textContent = String(error.message || error);
+  }
+}
+
+async function planSyncRun() {
+  try {
+    const body = await api('/sync/plan');
+    const plan = body.plan;
+    let html = '<table><thead><tr><th>目录</th><th>文件数</th><th>体积</th><th>云端位置</th></tr></thead><tbody>';
+    for (const root of plan.roots) {
+      html += '<tr><td>' + root.name + (root.exists ? '' : ' <span class="muted">（本机没有，跳过）</span>') + '</td><td>' +
+        (root.exists ? root.files : '-') + '</td><td>' + (root.exists ? fmtBytes(root.bytes) : '-') + '</td><td class="mono">' + root.remote + '</td></tr>';
+    }
+    html += '</tbody></table><div class="hint">合计 ' + plan.totalFiles + ' 个文件 · ' + fmtBytes(plan.totalBytes) +
+      '。增量同步只传新增/变化的文件；首次同步会全量上传一次。</div>';
+    $('syncTable').innerHTML = html;
+  } catch (error) {
+    $('syncTable').textContent = String(error.message || error);
+  }
+}
+
+async function runSync() {
+  const mode = $('syncMode').value;
+  try {
+    await saveSyncQuiet();
+    await api('/sync/run', { method: 'POST', body: JSON.stringify({ mode }) });
+    $('syncHint').textContent = mode === 'download' ? '开始拉取…' : '开始上传…';
+    refreshSync();
+  } catch (error) {
+    $('syncHint').textContent = String(error.message || error);
+  }
+}
+
+async function saveSyncQuiet() {
+  try {
+    await api('/config', { method: 'POST', body: JSON.stringify({
+      syncMode: $('syncMode').value,
+      syncDir: $('syncDir').value.trim(),
+      syncMachine: $('syncMachine').value.trim(),
+      syncLockMinutes: Number($('syncLockMinutes').value),
+      syncDlDir: $('syncDlDir').value.trim(),
+      syncPrune: $('syncPrune').checked,
+      syncDirs: pickedSyncDirs(),
+    }) });
+    refreshSync();
+  } catch (error) {
+    $('syncHint').textContent = String(error.message || error);
+  }
+}
+
+$('btnSyncPlan').onclick = planSyncRun;
+$('btnSyncRun').onclick = runSync;
+$('btnSyncSave').onclick = saveSyncQuiet;
+$('btnSyncCancel').onclick = async () => {
+  try {
+    await api('/sync/cancel', { method: 'POST' });
+    refreshSync();
+  } catch (error) {
+    $('syncHint').textContent = String(error.message || error);
+  }
+};
+
 $('btnRun').onclick = () => run('upload');
 $('btnVerify').onclick = () => run('verify');
 $('btnCancel').onclick = async () => { try { await api('/cancel', { method: 'POST' }); refresh(); } catch (e) { $('err').textContent = String(e.message || e); } };
@@ -326,6 +504,7 @@ $('btnKeyGen').onclick = genKey;
 $('btnKeySave').onclick = saveKey;
 loadKey();
 refresh();
+refreshSync();
 </script>
 </body>
 </html>

@@ -95,7 +95,7 @@ assert.equal(config.json.config.keep, 3, 'default keep');
 assert.ok(config.json.view.stagingDir, 'staging dir resolved');
 assert.ok(config.json.view.remoteDir.startsWith('/'), 'remote dir');
 
-const saved = await call(base + '/config', { method: 'POST', body: { keep: 7, includeFeishuFiles: true, remoteDir: '/DeepSeek Harness/DSH-Backup', bogus: 1 } });
+const saved = await call(base + '/config', { method: 'POST', body: { keep: 7, includeFeishuFiles: true, remoteDir: '/DeepSeek Harness/DSH-Backup', dshHome: tmpHome, bogus: 1 } });
 assert.equal(saved.status, 200, 'POST /config status');
 assert.equal(saved.json.config.keep, 7, 'keep saved');
 assert.equal(saved.json.config.includeFeishuFiles, true, 'feishu saved');
@@ -116,10 +116,47 @@ assert.equal(ui.status, 200);
 assert.match(ui.headers['content-type'], /text\/html/);
 assert.match(ui.text, /阿里云盘备份/);
 assert.match(ui.text, /\/api\/dsh-aliyunpan-backup/);
+assert.match(ui.text, /同步（多机共享/, 'ui has the sync card');
+assert.match(ui.text, /开始同步/, 'ui has the sync run button');
 
 const log = await call(base + '/log', { url: base + '/log?lines=5' });
 assert.equal(log.status, 200);
 assert.ok(Array.isArray(log.json.lines), 'log lines array');
+
+// ---- 同步 ----
+const syncStatus = await call(base + '/sync');
+assert.equal(syncStatus.status, 200, 'GET /sync status');
+assert.equal(syncStatus.json.ok, true);
+assert.equal(syncStatus.json.mode, 'upload', 'default sync mode');
+assert.ok(syncStatus.json.dir.startsWith('/'), 'sync cloud dir');
+assert.equal(syncStatus.json.dirs.length, 4, 'default sync dirs');
+assert.equal(syncStatus.json.choices.includes('sessions'), true, 'choices include sessions');
+assert.equal(syncStatus.json.state.running, false, 'sync idle');
+assert.equal(typeof syncStatus.json.log.text, 'string', 'sync log text');
+
+const syncSaved = await call(base + '/config', { method: 'POST', body: {
+  syncMode: 'download',
+  syncDir: '/DeepSeek Harness/DSH-Sync',
+  syncMachine: 'test-machine',
+  syncLockMinutes: 30,
+  syncDirs: ['sessions', 'pets', 'node_modules', '../etc'],
+} });
+assert.equal(syncSaved.status, 200, 'POST /config sync fields');
+assert.equal(syncSaved.json.config.syncMode, 'download', 'sync mode saved');
+assert.deepEqual(syncSaved.json.config.syncDirs, ['sessions', 'pets'], 'whitelist filters unknown dirs');
+assert.equal(syncSaved.json.config.syncLockMinutes, 30, 'lock minutes saved');
+assert.deepEqual(syncSaved.json.view.syncRoots.map((r) => r.name), ['sessions', 'pets'], 'syncRoots follows selection');
+
+const plan = await call(base + '/sync/plan');
+assert.equal(plan.status, 200, 'GET /sync/plan');
+assert.equal(plan.json.plan.roots.length, 2, 'plan roots');
+assert.equal(plan.json.plan.totalFiles, 0, 'empty fake dsh home -> 0 files');
+assert.match(plan.json.plan.roots[0].remote, /DSH-Sync\/sessions$/);
+
+const badSync = await call(base + '/sync/run', { method: 'POST', body: { mode: 'nope' } });
+assert.equal(badSync.status, 400, 'bad sync mode rejected');
+const nothingToCancel = await call(base + '/sync/cancel', { method: 'POST' });
+assert.equal(nothingToCancel.json.ok, false, 'cancel without running sync');
 
 const badMode = await call(base + '/run', { method: 'POST', body: { mode: 'nope' } });
 assert.equal(badMode.status, 400, 'bad mode rejected');
@@ -229,6 +266,8 @@ assert.match(blob, /阿里云盘备份/, 'panel shows title');
 assert.match(blob, /立即备份并上传/, 'panel shows run button');
 assert.match(blob, /打开完整配置页/, 'panel shows the full page toggle');
 assert.match(blob, /复制配置页地址/, 'panel offers a copy-link fallback');
+assert.match(blob, /同步上传/, 'panel offers the one-click sync upload');
+assert.match(blob, /同步：/, 'panel shows sync summary line');
 // 宿主里 target=_blank 会被弹窗策略拦掉：配置页改为卡片内嵌 iframe（点击前不渲染），
 // 因此这里断言「没有外链 anchor」。
 const hrefs = [];
