@@ -14,20 +14,34 @@
 
 ### 1.1 从 GitHub 安装（推荐）
 
-在 DSH 里 **设置 → 插件（插件市场）→ 添加插件**，填：
+仓库已发布：**https://github.com/LYF-12/dsh-aliyunpan-backup**（Public，main 分支）
+
+在 DSH 里 **设置 → 插件（插件市场）→ 添加插件**，粘贴：
 
 ```
-github:<你的GitHub用户名>/dsh-aliyunpan-backup
+github:LYF-12/dsh-aliyunpan-backup
 ```
 
-也支持固定提交与目录 URL 形式：
+也接受固定提交与目录形式：
 
 ```
-github:<owner>/dsh-aliyunpan-backup#<commit-sha>
-https://github.com/<owner>/dsh-aliyunpan-backup/tree/main
+github:LYF-12/dsh-aliyunpan-backup#<commit-sha>
+https://github.com/LYF-12/dsh-aliyunpan-backup/tree/main
+```
+
+命令行等价写法（已实测，pnpm 直取 tarball，2.7s）：
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd" `
+  plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup
 ```
 
 安装后 **重启 DSH**，在 设置 → 插件 里能看到本插件的图标与配置页。
+
+> 走命令行 `dsh plugin add` 时，profile 的 `dsh.profile.bundles` 不会自动追加本包（实测）；
+> 走插件市场「添加插件」则会在安装流程里一并登记 bundle。若用命令行安装且界面没出现，
+> 到 `%USERPROFILE%\.dsh\profiles\<profile>\package.json` 的 `dsh.profile.bundles` 数组里补一行
+> `"dsh-aliyunpan-backup"` 再重启。
 
 ### 1.2 本机源码安装（开发用，已实测）
 
@@ -45,18 +59,19 @@ profile 的 `dsh.profile.bundles` 自动追加 `dsh-aliyunpan-backup`。装完**
 > 注意：DSH 内置插件管理器的 update/install 对「已在 profile 里声明」的包会返回 `already-installed`（上游问题）。
 > 手动升级请用上面的 bundled pnpm，并把目标版本追加进 `pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude`。
 
-### 1.3 发布到你自己的 GitHub 仓库
+### 1.3 改完代码怎么再推上去
+
+远端 = `origin` → https://github.com/LYF-12/dsh-aliyunpan-backup.git，已配好 Git 凭据管理器（GCM），
+本机凭据已存（`LYF-12`），直接：
 
 ```powershell
 cd D:\Code\deepseek\cs\dsh-aliyunpan-backup
-# 先在 GitHub 网页建一个空仓库（不要勾 README/.gitignore/LICENSE）
-git remote add origin https://github.com/<你的用户名>/dsh-aliyunpan-backup.git
-git branch -M main
-git push -u origin main
+git add -A; git commit -m "your change"; git push
 ```
 
-推送时 GitHub 要凭据：密码处填 **Personal Access Token**（fine-grained，权限 Contents = Read and write）。
-推完把 `package.json` 里的 `repository.url` 改成你的仓库地址（可选，只影响展示）。
+> 本机实测 `github.com:443` 时通时不通（api.github.com 一直通）。若 `git push` 报
+> `Could not connect to server` / `Connection timed out`，重试即可；实在不通时可走
+> GitHub REST 的 Git Data API 提交（blobs → trees → commits → refs）。
 
 ---
 

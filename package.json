@@ -62,10 +62,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/LYF/dsh-aliyunpan-backup.git"
+    "url": "git+https://github.com/LYF-12/dsh-aliyunpan-backup.git"
   },
   "bugs": {
-    "url": "https://github.com/LYF/dsh-aliyunpan-backup/issues"
+    "url": "https://github.com/LYF-12/dsh-aliyunpan-backup/issues"
   },
-  "homepage": "https://github.com/LYF/dsh-aliyunpan-backup#readme"
+  "homepage": "https://github.com/LYF-12/dsh-aliyunpan-backup#readme"
 }
