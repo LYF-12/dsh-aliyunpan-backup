@@ -83,7 +83,15 @@ git add -A; git commit -m "your change"; git push
 2. 在该目录执行一次 `aliyunpan login`：终端会打印一个 **5 分钟内有效**的链接，浏览器里点「允许」后回到终端按一次回车
 3. `aliyunpan who` 能看到 UID / 昵称即成功（客户端里的登录态与 CLI 是两套，必须单独登一次）
 
-插件会自动探测常见路径，也可以在配置页手填「aliyunpan 可执行文件」。
+插件按这个顺序找 `aliyunpan`，换一台 Windows 机器不用改代码：
+
+1. 配置页里手填的「aliyunpan 可执行文件」
+2. 遗留路径：本机以前放过的位置（存在才用，不存在跳过）
+3. 插件数据目录：`%USERPROFILE%\.dsh\dsh-aliyunpan-backup\aliyunpan.exe`
+4. 常见安装位置：`%LOCALAPPDATA%\Programs\aliyunpan\`、`C:\Program Files\aliyunpan\`
+5. **PATH**：任何已在 `PATH` 里的 `aliyunpan.exe`（最省事：装好后命令行能直接敲 `aliyunpan` 就行）
+
+每台机器都要各自 `aliyunpan login` 一次（登录态不跟备份包走）。
 
 ---
 
@@ -103,7 +111,7 @@ git add -A; git commit -m "your change"; git push
 | `keep` | `3` | 云端保留份数，`0` 表示不清理 |
 | `aliyunpanExe` | 自动探测 | aliyunpan 可执行文件路径 |
 | `dshHome` | `%USERPROFILE%\.dsh` | 要备份的 DSH 数据目录 |
-| `keyFile` | `<stagingDir>/KEY.txt` | 口令文件；首次运行自动生成 24 位随机口令 |
+| `keyFile` | `<stagingDir>/KEY.txt` | 口令文件；首次运行自动生成 24 位随机口令；换机器时用配置页的「口令」卡片粘贴旧口令 |
 | `includeFeishuFiles` | `false` | 是否收录 `feishu\files`（收到的文档/压缩包，约 +270MB） |
 | `includeCredentials` | `false` | 是否收录 `.credentials.yaml` / `.npmrc`（登录凭据）；默认不收，换机后重新登录 |
 | `restoreDir` | 空 | 「解包」输出目录；留空 = `<stagingDir>\restore\<快照名>` |
@@ -187,32 +195,40 @@ node lib/scripts/restore.mjs --pkg "D:\DSH-Backup\snapshots\20261026T1512-full" 
 
 界面里「解包」默认落到 `D:\DSH-Backup\restore\<快照名>`（可在配置里改 `restoreDir`），**不会直接覆盖 `.dsh`**——先看内容，再手工挑需要的目录复制回 `C:\Users\<你>\.dsh`。
 
-跨机器还原完整流程：
+### 6.1 换电脑还原（0.2.0 起不用手拷 KEY.txt）
+
+**要带过去的只有一样东西：口令**（旧机器 `KEY.txt` 里那串字符）。云端 `payload.enc` 是 AES-256-GCM，没有口令谁也解不开，插件也救不回来。
+
+1. **旧机器**：配置页 →「口令」→ 点「显示口令」或「复制口令」→ 存进密码管理器 / 离线记录
+2. **新机器**：安装插件（见 §1.1）→ `aliyunpan login` → 配置页确认云端目录仍是 `/DeepSeek Harness/DSH-Backup`
+3. **新机器**：配置页 →「口令」→ 输入框粘贴旧口令 → 点「使用此口令」（写入本机 `KEY.txt`）
+4. 取回快照（名字必须与云端 `<id>` 一致）：
 
 ```powershell
-# 0) 新机器上先登录网盘（只需一次）
-aliyunpan login
-
-# 1) 只看云端有哪些快照
 aliyunpan ls "/DeepSeek Harness/DSH-Backup/snapshots"
-
-# 2) 取一份（含 package.info.json + payload.enc）到本地暂存目录，名字必须保持 <id>
-aliyunpan download --saveto "D:\DSH-Backup\snapshots" "/DeepSeek Harness/DSH-Backup/snapshots/20261026T1512-full"
-
-# 3) 口令：把旧机器的 D:\DSH-Backup\KEY.txt 手工拷过来（丢了密文无解）
-
-# 4) 校验 + 解包
-node lib/scripts/restore.mjs --pkg "D:\DSH-Backup\snapshots\20261026T1512-full" --key "D:\DSH-Backup\KEY.txt" --verify-only
-node lib/scripts/restore.mjs --pkg "D:\DSH-Backup\snapshots\20261026T1512-full" --key "D:\DSH-Backup\KEY.txt" --out "D:\restore-20261026"
+aliyunpan download --saveto "%USERPROFILE%\.dsh\dsh-aliyunpan-backup\staging\snapshots" "/DeepSeek Harness/DSH-Backup/snapshots/20261026T1512-full"
 ```
 
-下载后把 `D:\DSH-Backup\snapshots\<id>` 放好，插件界面「本地快照」里就能看到它，直接点「校验 / 解包」即可。
+5. 插件界面「本地快照」里点「校验」→ 出现 `verify: ok=N bad=0` 说明口令与包匹配；再点「解包」
+
+命令行等价（把路径换成你自己配置页显示的暂存目录）：
+
+```powershell
+node lib/scripts/restore.mjs --pkg "<staging>\snapshots\20261026T1512-full" --key "<staging>\KEY.txt" --verify-only
+node lib/scripts/restore.mjs --pkg "<staging>\snapshots\20261026T1512-full" --key "<staging>\KEY.txt" --out "D:\restore-20261026"
+```
+
+**多台机器共用一个云端目录时**：`keep` 是全局份数（不是每台各算），后来的备份会按顺序挤掉最早的；机器多了把 `keep` 调到机器数 ×2 以上，或者干脆设 `0` 不清理。逆序还原永远是「下载想要的 `<id>` 那一份」，不受影响。
+
+**新机器上暂存目录默认在哪？** 老机器若用过 `D:\DSH-Backup` 且该目录存在才沿用它；否则是插件数据目录 `%USERPROFILE%\.dsh\dsh-aliyunpan-backup\staging`。两处都在配置页「本地暂存目录」里显示，别写死。
 
 ---
 
 ## 7. 安全边界
 
 - 口令只存本机 `KEY.txt`（建议离线备份一份；**丢了密文无法恢复**）
+- 配置页「显示口令 / 复制口令」走宿主 loopback 接口，非本机请求一律 403；口令明文不会写进日志、不会进备份包
+- Windows 忽略 POSIX 权限位（`0o600` 实际不生效），`KEY.txt` 的隔离依赖 `%USERPROFILE%` 目录自身的 ACL（默认只有本用户可读），别把它拷到共享盘
 - 宿主接口只接受 **loopback** 请求，非本机一律 403
 - 配置写入走字段白名单
 - 插件不保存阿里云盘令牌，网盘登录态由 `aliyunpan` 自己持有
@@ -223,14 +239,14 @@ node lib/scripts/restore.mjs --pkg "D:\DSH-Backup\snapshots\20261026T1512-full" 
 ## 8. 开发
 
 ```powershell
-node test/smoke.mjs     # 宿主 7 条路由 + 浏览器半侧（vm 里加载 client.js，替身 react）
+node test/smoke.mjs     # 宿主 8 条路由 + 浏览器半侧（vm 里加载 client.js，替身 react）
 node test/e2e.mjs       # 真跑一遍：打包 → 加密 → 校验 → 读日志 → 恢复校验
 ```
 
 目录：
 
 ```
-lib/index.js        宿主半侧（name / inject:["webServer"] / apply → 7 条 exact 路由）
+lib/index.js        宿主半侧（name / inject:["webServer"] / apply → 8 条 exact 路由）
 lib/client.js       浏览器半侧（只 require react；挂 plugins.bundle.config 官方配置卡 + plugins.detail.section 详情区）
 lib/ui.html         完整配置页
 lib/config.mjs      配置读写 / 路径解析
@@ -252,6 +268,33 @@ test/               smoke.mjs、e2e.mjs
 **Q：想更小的包？** 保持 `includeFeishuFiles = false`（默认），并把 `stagingDir` 放在空间充足的盘。
 
 **Q：清理旧快照会真删吗？** `aliyunpan rm` 是移进回收站，可找回。
+
+**Q：换另一台电脑要带走什么？** 只带口令 + 网盘账号：插件从 GitHub 装，快照从云端下，`.dsh` 本身不用拷。流程见 §6.1。
+
+**Q：口令忘了 / `KEY.txt` 丢了？** 云端快照就永久解不开了（AES-256-GCM，无后门）。要么从旧机器再复制一次，要么从你自己的密码记录里找；都没有就只能重新开始备份。所以第一次生成口令后请立刻存一份到密码管理器。
+
+**Q：新机器点「校验」报「口令文件不存在」？** 这是 0.2.0 有意加的前置检查。去配置页「口令」粘贴旧口令即可，别去改 `keyFile` 路径。
+
+**Q：为什么以前备份里 `profiles\<名字>\` 是空的？** 0.1.x 的采集规则只收 `profiles\` 根级文件，插件装配（`cordis.patch.yml`、`package.json`、锁文件）实际没进包；0.2.0 已修，现在会收 `profiles\<名字>\` 下的配置类文件（`node_modules` 仍排除）。
+
+---
+
+## 10. 变更记录
+
+**0.2.0（2026-10-26）— 换机可用性**
+- `aliyunpan` 按 配置 → 遗留路径 → 插件数据目录 → 常见安装位置 → **PATH** 探测，换机器不用改代码
+- 配置页新增「口令」卡片：显示 / 复制 / **粘贴旧机器口令** / 生成新口令；「校验」「解包」前若口令文件缺失直接给出可读错误
+- 修：`profiles\<名字>\` 下的配置类文件以前完全没进包（插件装配会丢），现在会收，`node_modules` 仍排除
+- 修：新机器暂存目录不存在时，子进程 `spawn` 的 `cwd` 无效导致任务静默失败（现在先建目录）
+- 修：`restore` 用配置里的 `keyFile`，不再硬编码 `<staging>\KEY.txt`
+- 修：解包按 `\` 与 `/` 两种分隔符归一化，包内路径不会再被压平成文件名
+- 路径解析统一遵循 `DSH_AB_HOME`；子进程只拿到 `DSH_AB_CONFIG` 时也能反推出正确数据目录
+
+**0.1.2** 配置页改为卡片内嵌 iframe（宿主拦住 `target=_blank`，点「打开完整配置页」原先没反应），并加「复制配置页地址」
+
+**0.1.1** 「解包」补 `--out`（原先按钮必失败）；默认不收录 `.credentials.yaml` / `.npmrc` 等凭据
+
+**0.1.0** 首个版本：打包 → AES-256-GCM → 上传 → 校验 → 按份数清理
 
 ---
 

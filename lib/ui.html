@@ -109,6 +109,24 @@
   </div>
 
   <div class="card">
+    <h2>口令（KEY.txt）</h2>
+    <div class="row">
+      <span id="keyState" class="muted">读取中…</span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnKeyReveal">显示口令</button>
+      <button id="btnKeyCopy">复制口令</button>
+      <button id="btnKeyGen">生成新口令</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <input type="text" id="keyInput" class="grow" placeholder="粘贴旧电脑的 KEY.txt 内容（或任意自定义口令，8–200 字符）">
+      <button id="btnKeySave" class="primary">使用此口令</button>
+    </div>
+    <div class="hint">换电脑还原旧快照时，必须使用<strong>同一口令</strong>：口令只在本机 KEY.txt 里，云端包没有口令无法解开。请把口令另外存一份（密码管理器 / 离线记录），不要只存在这台机器上。</div>
+    <div id="keyMsg" class="hint"></div>
+  </div>
+
+  <div class="card">
     <h2>本地快照</h2>
     <table>
       <thead><tr><th>快照</th><th>大小</th><th>时间</th><th></th></tr></thead>
@@ -222,6 +240,62 @@ async function restore(snapshot, verifyOnly) {
   } catch (error) { $('err').textContent = String(error.message || error); }
 }
 
+function fmtKey(k) {
+  if (!k) return '';
+  if (!k.exists) return '还没有口令文件（第一次备份会自动生成 24 位随机口令）';
+  if (!k.usable) return '口令太短（' + k.length + ' 字符），请重新设置';
+  return '已就绪 · ' + k.length + ' 字符 · ' + k.masked + ' · ' + k.keyFile;
+}
+
+async function loadKey() {
+  try {
+    const k = await api('/key');
+    $('keyState').textContent = fmtKey(k);
+  } catch (error) {
+    $('keyState').textContent = String(error.message || error);
+  }
+}
+
+async function revealKey() {
+  try {
+    const k = await api('/key?reveal=1');
+    if (!k.exists) { $('keyMsg').textContent = '还没有口令文件'; return; }
+    $('keyMsg').textContent = '口令：' + k.key;
+  } catch (error) { $('keyMsg').textContent = String(error.message || error); }
+}
+
+async function copyKey() {
+  try {
+    const k = await api('/key?reveal=1');
+    if (!k.exists) { $('keyMsg').textContent = '还没有口令文件'; return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(k.key);
+      $('keyMsg').textContent = '口令已复制到剪贴板，请存到密码管理器里';
+    } else {
+      $('keyMsg').textContent = '当前环境不支持剪贴板，请点「显示口令」手动复制';
+    }
+  } catch (error) { $('keyMsg').textContent = String(error.message || error); }
+}
+
+async function saveKey() {
+  const pass = $('keyInput').value.trim();
+  if (!pass) { $('keyMsg').textContent = '请先粘贴口令'; return; }
+  try {
+    await api('/key', { method: 'POST', body: JSON.stringify({ passphrase: pass }) });
+    $('keyInput').value = '';
+    $('keyMsg').textContent = '口令已写入，旧快照现在可以解包了';
+    loadKey();
+  } catch (error) { $('keyMsg').textContent = String(error.message || error); }
+}
+
+async function genKey() {
+  try {
+    const k = await api('/key', { method: 'POST', body: JSON.stringify({ generate: true }) });
+    $('keyMsg').textContent = '新口令：' + k.key + ' —— 记下来，之后无法再显示（旧快照将解不开）';
+    loadKey();
+  } catch (error) { $('keyMsg').textContent = String(error.message || error); }
+}
+
 async function save() {
   try {
     await api('/config', { method: 'POST', body: JSON.stringify({
@@ -245,6 +319,11 @@ $('btnVerify').onclick = () => run('verify');
 $('btnCancel').onclick = async () => { try { await api('/cancel', { method: 'POST' }); refresh(); } catch (e) { $('err').textContent = String(e.message || e); } };
 $('btnRefresh').onclick = refresh;
 $('btnSave').onclick = save;
+$('btnKeyReveal').onclick = revealKey;
+$('btnKeyCopy').onclick = copyKey;
+$('btnKeyGen').onclick = genKey;
+$('btnKeySave').onclick = saveKey;
+loadKey();
 refresh();
 </script>
 </body>
