@@ -141,7 +141,8 @@ assert.equal(syncStatus.status, 200, 'GET /sync status');
 assert.equal(syncStatus.json.ok, true);
 assert.equal(syncStatus.json.mode, 'upload', 'default sync mode');
 assert.ok(syncStatus.json.dir.startsWith('/'), 'sync cloud dir');
-assert.equal(syncStatus.json.dirs.length, 4, 'default sync dirs');
+assert.equal(syncStatus.json.dirs.filter((d) => d.kind === 'dir').length, 4, 'default sync dirs');
+assert.ok(syncStatus.json.dirs.some((d) => d.kind === 'file'), 'assembly files are part of the default roots');
 assert.equal(syncStatus.json.choices.includes('sessions'), true, 'choices include sessions');
 assert.equal(syncStatus.json.state.running, false, 'sync idle');
 assert.equal(typeof syncStatus.json.log.text, 'string', 'sync log text');
@@ -157,13 +158,45 @@ assert.equal(syncSaved.status, 200, 'POST /config sync fields');
 assert.equal(syncSaved.json.config.syncMode, 'download', 'sync mode saved');
 assert.deepEqual(syncSaved.json.config.syncDirs, ['sessions', 'pets'], 'whitelist filters unknown dirs');
 assert.equal(syncSaved.json.config.syncLockMinutes, 30, 'lock minutes saved');
-assert.deepEqual(syncSaved.json.view.syncRoots.map((r) => r.name), ['sessions', 'pets'], 'syncRoots follows selection');
+assert.deepEqual(syncSaved.json.view.syncRoots.filter((r) => r.kind === 'dir').map((r) => r.name), ['sessions', 'pets'], 'syncRoots follows selection');
 
 const plan = await call(base + '/sync/plan');
 assert.equal(plan.status, 200, 'GET /sync/plan');
-assert.equal(plan.json.plan.roots.length, 2, 'plan roots');
+assert.equal(plan.json.plan.roots.filter((r) => r.kind === 'dir').length, 2, 'plan dir roots');
 assert.equal(plan.json.plan.totalFiles, 0, 'empty fake dsh home -> 0 files');
 assert.match(plan.json.plan.roots[0].remote, /DSH-Sync\/sessions$/);
+
+// ---- 配置文件级同步（模型装配 / 插件清单 / 凭据）----
+const fileInfo = await call(base + '/sync');
+assert.equal(fileInfo.json.fileChoices.length, 3, 'file choices exposed');
+const fileIds = fileInfo.json.fileChoices.map((c) => c.id);
+assert.deepEqual(fileIds, ['model', 'plugins', 'credentials'], 'file choice ids');
+
+// 造假 profile 目录：装配文件要能被选进同步根，_bak-* 目录要跳过
+fs.mkdirSync(path.join(tmpHome, 'profiles', 'desktop'), { recursive: true });
+fs.mkdirSync(path.join(tmpHome, 'profiles', '_bak-old'), { recursive: true });
+fs.writeFileSync(path.join(tmpHome, 'profiles', 'desktop', 'cordis.patch.yml'), 'llm: {}\n');
+fs.writeFileSync(path.join(tmpHome, 'profiles', 'desktop', 'package.json'), '{"name":"p"}\n');
+fs.writeFileSync(path.join(tmpHome, '.credentials.yaml'), 'refs: []\n');
+
+const fileCfg = await call(base + '/config', { method: 'POST', body: { syncFiles: ['model', 'plugins', 'credentials', 'nope'] } });
+assert.deepEqual(fileCfg.json.config.syncFiles, ['model', 'plugins', 'credentials'], 'syncFiles goes through the whitelist');
+const fileRoots = fileCfg.json.view.syncRoots.filter((r) => r.kind === 'file').map((r) => r.name).sort();
+assert.deepEqual(
+  fileRoots,
+  ['.credentials.yaml', 'profiles/desktop/cordis.patch.yml', 'profiles/desktop/package.json', 'profiles/desktop/pnpm-lock.yaml', 'profiles/desktop/pnpm-workspace.yaml'],
+  'file roots: ' + fileRoots.join(','),
+);
+assert.equal(fileRoots.some((n) => n.includes('_bak-old')), false, 'backup profile directories are skipped');
+
+const planWithFiles = await call(base + '/sync/plan');
+const planned = planWithFiles.json.plan.roots.filter((r) => r.kind === 'file');
+assert.equal(planned.find((r) => r.name === '.credentials.yaml').exists, true, 'existing credential file detected');
+assert.equal(planned.find((r) => r.name === '.credentials.yaml').files, 1, 'file root counts as one file');
+assert.equal(planned.find((r) => r.name.endsWith('pnpm-lock.yaml')).exists, false, 'missing file reported as absent');
+
+const pickGet = await call(base + '/pick');
+assert.equal(pickGet.status, 405, '/pick only accepts POST');
 
 const badSync = await call(base + '/sync/run', { method: 'POST', body: { mode: 'nope' } });
 assert.equal(badSync.status, 400, 'bad sync mode rejected');

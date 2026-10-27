@@ -97,7 +97,7 @@ svg{max-width:100%;height:auto;display:block;margin:0 auto}
 <header class="hero">
   <h1>DSH 云同步 · 使用说明</h1>
   <p>把 DeepSeek Harness 的会话、附件、工作区索引、任务板，逐目录增量镜像到阿里云盘；换台电脑拉回来就能接着用。</p>
-  <div class="tags"><span>插件版本 0.4.1</span><span>同步主链路</span><span>附带包解码器</span><span>一主多从</span></div>
+  <div class="tags"><span>插件版本 0.4.2</span><span>同步主链路</span><span>附带包解码器</span><span>一主多从</span></div>
 </header>
 
 <section id="s1">
@@ -183,6 +183,8 @@ aliyunpan ls "/"       <span class="c"># 能列目录就算通了</span></code><
     <span class="node">打开完整配置页</span>
   </div>
   <p>完整配置页里七张卡：<b>运行环境</b>、<b>同步</b>、<b>解码本地包</b>、<b>口令</b>、<b>路径配置</b>、<b>解码日志</b>。第一次用建议先开完整配置页做设置。</p>
+  <p>卡片上的状态徽标只反映<b>同步</b>这条链路：<code>未同步</code> → <code>同步中</code> → <code>已上传</code> / <code>已拉取</code>。<b>看到「未同步」不等于插件坏了</b>，点一次「同步上传」就开始。缺 CLI 时徽标是「缺 aliyunpan」，右侧会多一个「下载 aliyunpan」。</p>
+  <div class="ok"><b>路径不用手打</b>配置页里每个路径框右边都有「浏览…」，点开是 Windows 原生选择框，选完自动回填。也可以继续手填。</div>
 </section>
 
 <section id="s3">
@@ -190,7 +192,7 @@ aliyunpan ls "/"       <span class="c"># 能列目录就算通了</span></code><
   <p class="lead">把本机数据推到云端。第一次是全量，之后只传变化的文件。</p>
 
   <div class="flow">
-    <div class="step"><h4>选目录</h4><p>同步卡片里勾选要传的目录。默认四个：<code>sessions</code>（会话）、<code>attachments</code>（附件）、<code>storages</code>（工作区/定时/索引）、<code>task-board</code>（任务板）。还可以加 <code>skins</code>、<code>pets</code>、<code>eda</code>、<code>sources</code>、<code>backups</code>、<code>dsh-usage</code>。</p></div>
+    <div class="step"><h4>选目录 + 装配文件</h4><p>同步卡片里勾选要传的目录。默认四个：<code>sessions</code>（会话）、<code>attachments</code>（附件）、<code>storages</code>（工作区/定时/索引）、<code>task-board</code>（任务板）。还可以加 <code>skins</code>、<code>pets</code>、<code>eda</code>、<code>sources</code>、<code>backups</code>、<code>dsh-usage</code>。</p><p>下面还有三个<b>文件级</b>选项：<b>模型与插件装配</b>（<code>profiles/&lt;profile&gt;/cordis.patch.yml</code>，模型列表在这里）、<b>插件清单</b>（<code>package.json</code> + 锁文件）、<b>登录凭据</b>（<code>.credentials.yaml</code>，默认不勾）。<b>API Key 不在模型配置里</b>，要带走 Key 得单独勾「登录凭据」，那是明文上云。</p></div>
     <div class="step"><h4>预演</h4><p>点「预演」只做统计：多少个文件、多少 MB、云端目标路径。不动云端也不动本机。心里有数再传。</p></div>
     <div class="step"><h4>开始同步（upload 模式）</h4><p>新增文件走 <code>--skip</code>（云端同名跳过），修改文件走 <code>-ow</code> 覆盖，无变化直接跳过。按云端父目录分批、每批 ≤20 个、4 并发。</p></div>
     <div class="step"><h4>看结果</h4><p>每个目录一行：<code>OK 上传 N 个文件 用时 Ns</code>。末行固定 <code>SYNC RESULT: mode=upload roots=N files=N failed=0</code>。失败数非 0 就看下面的同步日志。</p></div>
@@ -320,6 +322,8 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "&lt;云端路径&gt;"
     <tr><td><code>syncLockMinutes</code></td><td><code>60</code></td><td>其它机器活动窗口，0 = 不检查</td></tr>
     <tr><td><code>syncDlDir</code></td><td>空 = 插件目录 <code>sync-dl</code></td><td>拉取暂存目录</td></tr>
     <tr><td><code>syncPrune</code></td><td><code>false</code></td><td>拉取时删本机多余文件</td></tr>
+<tr><td><code>syncFiles</code></td><td><code>[model, plugins]</code></td><td>装配文件：<code>model</code> 模型配置、<code>plugins</code> 插件清单、<code>credentials</code> 登录凭据（默认不勾）</td></tr>
+<tr><td><code>syncProfile</code></td><td>空 = 自动</td><td>装配文件用哪个 profile 名；新机器还没建 profile 时也能填</td></tr>
     <tr><td><code>stagingDir</code></td><td>空 = 自动</td><td>包与解包临时区</td></tr>
     <tr><td><code>keyFile</code></td><td>空 = <code>staging\KEY.txt</code></td><td>本机口令文件</td></tr>
     <tr><td><code>restoreDir</code></td><td>空 = <code>staging\restore\&lt;包名&gt;</code></td><td>解包输出目录</td></tr>
@@ -336,7 +340,7 @@ node lib/scripts/syncd.mjs --mode download --prune --strict
 node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --verify-only
 node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --out &lt;目录&gt;</code></pre>
 
-  <h3>8.3 HTTP 路由（13 条，仅 loopback）</h3>
+  <h3>8.3 HTTP 路由（14 条，仅 loopback）</h3>
   <table>
     <tr><th>路由</th><th>方法</th><th>说明</th></tr>
     <tr><td><code>/api/dsh-aliyunpan-backup/ui</code></td><td>GET</td><td>完整配置页</td></tr>
@@ -348,6 +352,7 @@ node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --ou
     <tr><td><code>/log</code></td><td>GET</td><td>解码日志</td></tr>
     <tr><td><code>/provision</code></td><td>GET</td><td>aliyunpan 环境与安装状态</td></tr>
     <tr><td><code>/provision/run</code></td><td>POST</td><td>自举安装（可带 url / tag）</td></tr>
+<tr><td><code>/pick</code></td><td>POST</td><td>弹系统选择框 <code>{kind, initial, title}</code>（kind = dir 或 file）→ <code>{ok, path}</code>；取消或超时 409</td></tr>
     <tr><td><code>/sync</code></td><td>GET</td><td>同步配置与状态</td></tr>
     <tr><td><code>/sync/plan</code></td><td>GET</td><td>预演统计</td></tr>
     <tr><td><code>/sync/run</code></td><td>POST</td><td>开始同步</td></tr>
@@ -396,7 +401,7 @@ node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --ou
     <tr><td>云端同步根</td><td><code>/DeepSeek Harness/DSH-Sync</code></td></tr>
     <tr><td>云端旧包目录</td><td><code>/DeepSeek Harness/DSH-Backup</code></td></tr>
   </table>
-  <p class="foot">插件版本 0.4.1 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
+  <p class="foot">插件版本 0.4.2 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
 </section>
 
 </main>

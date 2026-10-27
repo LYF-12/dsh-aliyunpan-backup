@@ -1,6 +1,6 @@
 # dsh-aliyunpan-backup
 
-把 **DeepSeek Harness（DSH）** 的数据同步到 **阿里云盘** 的 DSH 插件：会话、附件、工作区索引、任务板等目录**逐目录增量镜像**，一台主机推、多台从机拉。
+把 **DeepSeek Harness（DSH）** 的数据同步到 **阿里云盘** 的 DSH 插件：会话、附件、工作区索引、任务板等目录**逐目录增量镜像**，装配文件（模型配置 / 插件清单）按文件单独带，一台主机推、多台从机拉。
 
 > 图文版使用说明（含流程图）：[`docs/usage.html`](docs/usage.html)
 
@@ -22,7 +22,8 @@
 | 拉回另一台机器的改动 | 可用 | 先下到暂存目录，再由 Node 逐文件比对，**不覆盖正在运行的 DSH** |
 | 校验加密包完整性 | 可用 | `payload.enc` 任意位置，按 manifest 逐个 sha256 |
 | 解包加密包 | 可用 | 默认落到暂存目录，不覆盖 `.dsh`，人工挑回 |
-| 按模块勾选同步内容 | 部分 | 从 10 个白名单目录里多选，不能选任意路径 |
+| 按模块勾选同步内容 | 可用 | 10 个白名单目录多选 + 3 类装配文件（模型配置 / 插件清单 / 凭据），仍不支持任意路径 |
+| 路径手输 / 系统选择框 | 可用 | 配置页每个路径旁边都有「浏览…」，弹 Windows 原生文件夹/文件对话框 |
 | 打包 + 加密 + 上传 | **已移除**（0.4.0） | 上传交给同步链路；旧包仍可解码 |
 | 双向实时同步 | 不支持 | 需要手动点「开始同步」，多机靠锁与索引避免互相踩 |
 
@@ -72,7 +73,7 @@ dsh plugin --profile desktop add link:D:\Code\deepseek\cs\dsh-aliyunpan-backup
 
 ## 3. 界面
 
-设置 → 插件 → 本插件是一张卡片：状态徽标、上次结果、四个按钮。
+设置 → 插件 → 本插件是一张卡片：状态徽标、上次结果、几个按钮。徽标口径只有同步：**未同步 / 同步中 / 已上传 / 已拉取**（缺 exe 时显示「缺 aliyunpan」）。
 
 | 按钮 | 作用 |
 | --- | --- |
@@ -84,13 +85,21 @@ dsh plugin --profile desktop add link:D:\Code\deepseek\cs\dsh-aliyunpan-backup
 
 完整配置页（`/api/dsh-aliyunpan-backup/ui`）七张卡：运行环境、同步、解码本地包、口令、路径配置、解码日志；「运行环境」卡显示 aliyunpan 是否就绪、版本、安装路径、安装进度日志，以及自定义下载地址。
 
+所有路径输入框旁边都有按钮：
+
+- 目录类 → **浏览…**（FolderBrowserDialog）
+- 文件类（`KEY.txt`、`payload.enc`、`aliyunpan.exe`）→ **浏览…**（OpenFileDialog）
+- 包卡片单独给「选文件夹…」「选文件…」两个，因为包既可能是一个目录，也可能直接是 `payload.enc`
+
+对话框由宿主进程拉起的 PowerShell 弹出，选完自动回填；没有桌面会话或非 Windows 时直接手输，功能不受影响。
+
 ---
 
 ## 4. 一次性准备（主机）
 
 0. （没装过的话）在配置页「运行环境」里点「下载并安装 aliyunpan」，装完再 `aliyunpan login` 登录。
 1. `aliyunpan login` 登录（每台机器各自登录）。
-2. 打开完整配置页，在「同步」卡片勾选要同步的目录（默认 `sessions` / `attachments` / `storages` / `task-board`）。
+2. 打开完整配置页，在「同步」卡片勾选要同步的目录（默认 `sessions` / `attachments` / `storages` / `task-board`），再勾要带的装配文件（默认「模型与插件装配」+「插件清单」，见 §5.2）。
 3. 点「预演」看一眼文件数与体积，再点「开始同步」做首次全量上传。
 4. 同步设置点「保存同步设置」持久化（机器名会自动取计算机名）。
 
@@ -110,7 +119,23 @@ dsh plugin --profile desktop add link:D:\Code\deepseek\cs\dsh-aliyunpan-backup
 - 上传按云端父目录分组、每批 ≤20 个文件，`-p 4` 并发。
 - `syncPrune` 打开时，云端多余文件会被删（默认关闭）。
 
-### 5.2 拉取（云端 → 从机）
+### 5.2 装配文件（模型配置 / 插件清单 / 凭据）
+
+目录同步解决「数据」，换台电脑还缺「环境」：模型列表、插件清单这些是本机装配出来的，不在 `sessions` 里。所以额外给三个**文件级**选项：
+
+| 选项 | 带哪些文件 | 云端位置 | 默认 |
+| --- | --- | --- | --- |
+| 模型与插件装配 | `profiles/<profile>/cordis.patch.yml` | `DSH-Sync/profiles/<profile>/cordis.patch.yml` | 勾 |
+| 插件清单 | `package.json` / `pnpm-lock.yaml` / `pnpm-workspace.yaml` | 同上目录 | 勾 |
+| 登录凭据 | `.credentials.yaml` | `DSH-Sync/.credentials.yaml` | **不勾** |
+
+- 模型 provider 与模型列表在 `cordis.patch.yml` 里，但 **API Key 不在里面**，Key 在 `.credentials.yaml`（明文 YAML）。所以「勾上模型配置」不会顺带把 Key 传上去。
+- 想连 Key 一起带走，得显式勾「登录凭据」。这是**明文上云**，只建议私有盘、自己的账号。
+- `profiles/` 整棵目录不能同步：里面是几十万个 `node_modules` 文件。插件清单的用途是**在另一台机器上照着重装**，不是直接拷文件。
+- 装配文件按**文件**比对（size + mtime），上传固定 `-ow` 覆盖，不会产生 `name(1).yml` 副本。
+- 「装配文件用哪个 profile」留空 = 本机第一个真实存在的 profile（跳过 `_bak-*`）。两台机器 profile 名字不一样时，在这一栏填对方的目录名（如 `desktop`）。
+
+### 5.3 拉取（云端 → 从机）
 
 ```text
 # 1) CLI 只负责把云端目录下到暂存区
@@ -124,19 +149,19 @@ aliyunpan download --saveto <暂存目录> --ow -p 3 <云端目录>
 - `syncPrune` 打开 = 严格镜像，会删本机多余文件。**先确认再开。**
 - 拉取前请先退出 DSH：正在运行的应用握着会话文件，Windows 上写盘会被拒。
 
-### 5.3 多机与锁
+### 5.4 多机与锁
 
 - 每台机器写入 `_last-sync-<机器名>.json`，借此判断「另一台机器最近是否同步过」。
 - `syncLockMinutes`（默认 60）内有其它机器活动时：默认只**告警**继续，`--strict` 下直接退出。
 - 两台机器同时上传同一批文件没有合并逻辑：**约定一台主机推、其它只拉**最省事。
 
-### 5.4 三个坑
+### 5.5 三个坑
 
 1. `Access is denied` / 暂存目录被拦 → 安全软件拦了 `aliyunpan.exe` 写盘。日志会打 `[hint]`，把 `syncDlDir` 换到允许的目录，或给 exe 加白。
 2. 不要用 `aliyunpan sync start`（CLI 自带同步）。它自己维护状态、和本插件的索引互相打架，行为不可预期。
 3. 先退出 DSH 再拉取，否则 `ledger-v2.lock` 之类的锁文件写不进去。
 
-### 5.5 命令行等价物
+### 5.6 命令行等价物
 
 ```powershell
 # 预演：只统计，不动云端
@@ -211,6 +236,8 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 | `syncLockMinutes` | `60` | 其它机器活动窗口；0 = 不检查 |
 | `syncDlDir` | 空 = 插件目录 `sync-dl` | 拉取暂存目录 |
 | `syncPrune` | `false` | 拉取时删本机多余文件 |
+| `syncFiles` | `[model, plugins]` | 装配文件：`model` / `plugins` / `credentials`（凭据默认不勾） |
+| `syncProfile` | 空 = 自动 | 装配文件用哪个 profile 名；新机器 profile 还没建时也可填 |
 | `stagingDir` | 空 = `D:\DSH-Backup`（存在时）否则 插件目录 `staging` | 包与解包临时区 |
 | `keyFile` | 空 = `staging\KEY.txt` | 本机口令文件 |
 | `restoreDir` | 空 = `staging\restore\<包名>` | 解包输出目录 |
@@ -221,7 +248,7 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 
 ---
 
-## 8. HTTP 路由（13 条，全部 exact + 仅 loopback）
+## 8. HTTP 路由（14 条，全部 exact + 仅 loopback）
 
 | 路由 | 方法 | 说明 |
 | --- | --- | --- |
@@ -238,6 +265,7 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 | `/sync/cancel` | POST | 取消同步 |
 | `/provision` | GET | aliyunpan 运行环境 + 安装状态与日志 |
 | `/provision/run` | POST | 自举安装（可带 `{url}` 覆盖下载地址，`{tag}` 指定版本） |
+| `/pick` | POST | 弹系统选择框：`{kind, initial, title}`（kind = `dir` 或 `file`）→ `{ok, path}`；取消/超时 409 |
 
 ---
 
@@ -257,7 +285,11 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 
 **Q：云端出现 `name(1).ext`？** 说明同一次上传里出现了同名且未加 `--skip`。本插件新增走 `--skip` 不会产生副本；若已产生，删掉副本再同步一次。
 
-**Q：同步会不会把我整个 `.dsh` 传上去？** 不会，只传 `syncDirs` 里那几个目录，且跳过 `node_modules`、`.git`、符号链接。
+**Q：同步会不会把我整个 `.dsh` 传上去？** 不会。只传 `syncDirs` 里那几个目录（跳过 `node_modules`、`.git`、符号链接），外加 `syncFiles` 勾选的几个装配文件。
+
+**Q：模型信息和 API Key 同步了吗？** 模型列表在 `profiles/<profile>/cordis.patch.yml`，勾「模型与插件装配」就会带；**Key 在 `.credentials.yaml`，默认不带**，要带得显式勾「登录凭据」（明文上云）。
+
+**Q：插件本身会同步过去吗？** 会带 `package.json` + 锁文件，但不会传 `node_modules`。另一台机器用 `dsh plugin add` 照清单重装，比拷几十万文件快。
 
 **Q：两台机器同时同步会怎样？** 会互相覆盖。用 `syncLockMinutes` + 一主多从的约定。
 
@@ -272,7 +304,7 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 ```powershell
 node --check lib/index.js      # 宿主半侧
 node --check lib/client.js     # 浏览器半侧
-node test/smoke.mjs            # 路由/配置/UI/客户端组件断言（11 条路由）
+node test/smoke.mjs            # 路由/配置/UI/客户端组件断言（14 条路由 + 装配文件根）
 node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口令 → 解包 → 逐字节比对
 ```
 
@@ -280,7 +312,7 @@ node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口�
 
 | 文件 | 作用 |
 | --- | --- |
-| `lib/index.js` | 宿主半侧：13 条路由 + 配置读写 + 口令 |
+| `lib/index.js` | 宿主半侧：14 条路由 + 配置读写 + 口令 + 系统选择框 |
 | `lib/client.js` | 设置卡片：同步上传 / 从机拉取 / 内嵌完整页 |
 | `lib/config.mjs` | 默认值、白名单、路径解析、`aliyunpan` 探测 |
 | `lib/provision.mjs` | 自举安装：查发布、挑包、下载校验、解压、试跑、写配置 |
@@ -295,6 +327,15 @@ node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口�
 ---
 
 ## 12. 变更记录
+
+### 0.4.2
+
+- **装配文件也能同步了**：新增文件级同步项 —— 模型与插件装配（`cordis.patch.yml`）、插件清单（`package.json` + 锁文件）、登录凭据（`.credentials.yaml`，默认不勾）。回答「模型信息和 key 为什么没同步」：Key 不随模型配置走，要单独勾且是明文上云。
+- 新增 `syncFiles` / `syncProfile` 配置项；本机还没有 profile 目录时按 `syncProfile`（默认 `desktop`）展开，保证全新机器也能拉到装配文件。
+- **路径不再只能手填**：配置页所有路径/文件输入框加「浏览…」，调宿主弹 Windows 原生 FolderBrowserDialog / OpenFileDialog，选完回填；新增 `/pick` 路由（14 条）。
+- 卡片状态徽标改成只看同步：未同步 / 同步中 / 已上传 / 已拉取。之前显示「尚未运行」是拿解码任务的状态当同步状态，容易误以为没跑起来。
+- 修 `plan` 把文件根重复算成目录根的问题（roots 翻倍）；文件根单独走 upload/download 单文件分支。
+- 测试：装配文件根的配置白名单、目录展开（跳过 `_bak-*`）、缺失文件汇报、`/pick` 非 POST 拒绝；真机 e2e 用两台假 home 验证「上传 3 文件 → 拉取 3 文件 → 逐字节一致」。
 
 ### 0.4.1
 

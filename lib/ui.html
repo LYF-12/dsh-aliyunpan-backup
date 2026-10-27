@@ -112,14 +112,22 @@
       <label class="field">互斥提醒窗口（分钟，0 = 不检查）
         <input type="number" id="syncLockMinutes" min="0" max="1440" step="1">
       </label>
+      <label class="field">装配文件用哪个 profile（留空 = 自动）
+        <input type="text" id="syncProfile" placeholder="留空 = 本机第一个 profile；新机器可填 desktop">
+      </label>
       <label class="field">下载暂存目录（aliyunpan 先下到这里）
-        <input type="text" id="syncDlDir" placeholder="留空 = 插件数据目录\sync-dl">
+        <span class="row" style="gap:6px">
+          <input type="text" id="syncDlDir" class="grow" placeholder="留空 = 插件数据目录\sync-dl">
+          <button type="button" data-pick="dir" data-target="syncDlDir" data-title="选择同步下载暂存目录">浏览…</button>
+        </span>
       </label>
     </div>
     <label class="hint" style="display:block;margin-top:8px">
       <input type="checkbox" id="syncPrune"> 拉取时删除本机多余文件（严格镜像；默认只增不删）
     </label>
     <div id="syncDirs" class="row" style="margin-top:12px"></div>
+    <div class="hint" style="margin-top:10px">配置文件（不带整棵 profiles / node_modules，只传装配需要的几个文件）</div>
+    <div id="syncFiles" class="row"></div>
     <div class="row" style="margin-top:12px">
       <button id="btnSyncPlan">预演（只统计，不动云端）</button>
       <button id="btnSyncRun" class="primary">开始同步</button>
@@ -137,7 +145,11 @@
       手里有 <code>payload.enc</code>（或含它的文件夹）就能解。填路径 → 校验 → 解包，解出来的文件<strong>不会</strong>覆盖本机 <code>.dsh</code>，只落到你指定的目录里。
     </div>
     <label class="field">包路径（文件夹或 payload.enc）
-      <input type="text" id="pkgPath" class="mono" placeholder="D:\下载\payload.enc 或 D:\下载\20261026T1917-full">
+      <span class="row" style="gap:6px">
+        <input type="text" id="pkgPath" class="mono grow" placeholder="D:\下载\payload.enc 或 D:\下载\20261026T1917-full">
+        <button type="button" data-pick="dir" data-target="pkgPath" data-title="选择包所在文件夹">选文件夹…</button>
+        <button type="button" data-pick="file" data-target="pkgPath" data-title="选择 payload.enc">选文件…</button>
+      </span>
     </label>
     <div class="row" style="margin-top:10px">
       <button id="btnPkgInspect">检查这个包</button>
@@ -147,7 +159,10 @@
     </div>
     <div class="row" style="margin-top:10px">
       <label class="field grow">解包输出目录
-        <input type="text" id="pkgOut" placeholder="留空 = 暂存目录\restore\<包名>">
+        <span class="row" style="gap:6px">
+          <input type="text" id="pkgOut" class="grow" placeholder="留空 = 暂存目录\restore\<包名>">
+          <button type="button" data-pick="dir" data-target="pkgOut" data-title="选择解包输出目录">浏览…</button>
+        </span>
       </label>
       <label class="field grow">口令（解别人的包时填）
         <input type="password" id="pkgPass" placeholder="留空 = 用本机口令文件">
@@ -186,19 +201,34 @@
     <h2>路径配置</h2>
     <div class="split">
       <label class="field">对应 DSH 目录
-        <input type="text" id="dshHome" placeholder="%USERPROFILE%\.dsh">
+        <span class="row" style="gap:6px">
+          <input type="text" id="dshHome" class="grow" placeholder="%USERPROFILE%\.dsh">
+          <button type="button" data-pick="dir" data-target="dshHome" data-title="选择 DSH 数据目录">浏览…</button>
+        </span>
       </label>
       <label class="field">暂存目录（解包工作区 + KEY.txt）
-        <input type="text" id="stagingDir" placeholder="留空 = 插件数据目录\staging">
+        <span class="row" style="gap:6px">
+          <input type="text" id="stagingDir" class="grow" placeholder="留空 = 插件数据目录\staging">
+          <button type="button" data-pick="dir" data-target="stagingDir" data-title="选择暂存目录">浏览…</button>
+        </span>
       </label>
       <label class="field">KEY 文件路径
-        <input type="text" id="keyFile" placeholder="留空 = 暂存目录\KEY.txt">
+        <span class="row" style="gap:6px">
+          <input type="text" id="keyFile" class="grow" placeholder="留空 = 暂存目录\KEY.txt">
+          <button type="button" data-pick="file" data-target="keyFile" data-title="选择 KEY.txt">浏览…</button>
+        </span>
       </label>
       <label class="field">解包默认输出目录
-        <input type="text" id="restoreDir" placeholder="留空 = 暂存目录\restore\<包名>">
+        <span class="row" style="gap:6px">
+          <input type="text" id="restoreDir" class="grow" placeholder="留空 = 暂存目录\restore\<包名>">
+          <button type="button" data-pick="dir" data-target="restoreDir" data-title="选择解包默认输出目录">浏览…</button>
+        </span>
       </label>
       <label class="field">aliyunpan 可执行文件
-        <input type="text" id="aliyunpanExe" placeholder="留空自动探测（含 PATH）">
+        <span class="row" style="gap:6px">
+          <input type="text" id="aliyunpanExe" class="grow" placeholder="留空自动探测（含 PATH）">
+          <button type="button" data-pick="file" data-target="aliyunpanExe" data-title="选择 aliyunpan 可执行文件">浏览…</button>
+        </span>
       </label>
     </div>
     <div class="row" style="margin-top:14px">
@@ -435,14 +465,47 @@ function pickedSyncDirs() {
     .map((cb) => cb.value);
 }
 
+function renderSyncFiles(data) {
+  const chosen = new Set((data.dirs || []).filter((d) => d.kind === 'file').map((d) => d.name));
+  const box = $('syncFiles');
+  box.innerHTML = '';
+  for (const choice of data.fileChoices || []) {
+    const label = document.createElement('label');
+    label.className = 'row';
+    label.style.gap = '6px';
+    label.title = choice.note || '';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = choice.id;
+    // 勾选状态按「这个 choice 的文件是否在同步根里」推导，避免依赖额外字段
+    cb.checked = [...chosen].some((name) => (choice.id === 'model' && name.endsWith('/cordis.patch.yml')) ||
+      (choice.id === 'plugins' && (name.endsWith('/package.json') || name.endsWith('/pnpm-lock.yaml') || name.endsWith('/pnpm-workspace.yaml'))) ||
+      (choice.id === 'credentials' && name === '.credentials.yaml'));
+    cb.style.width = 'auto';
+    cb.onchange = saveSyncQuiet;
+    const span = document.createElement('span');
+    span.textContent = choice.label;
+    label.append(cb, span);
+    box.appendChild(label);
+  }
+}
+
+function pickedSyncFiles() {
+  return [...document.querySelectorAll('#syncFiles input[type=checkbox]')]
+    .filter((cb) => cb.checked)
+    .map((cb) => cb.value);
+}
+
 function fillSync(data) {
   $('syncMode').value = data.mode || 'upload';
   $('syncDir').value = data.dir || '';
   $('syncMachine').value = data.machine || '';
   $('syncLockMinutes').value = data.lockMinutes;
   if (document.activeElement !== $('syncDlDir')) $('syncDlDir').value = data.dlDir || '';
+  if (document.activeElement !== $('syncProfile')) $('syncProfile').value = (data.config && data.config.syncProfile) || '';
   $('syncPrune').checked = data.prune === true;
   renderSyncDirs(data);
+  renderSyncFiles(data);
   $('syncLog').textContent = (data.log && data.log.text) || '（暂无）';
   const st = data.state || {};
   const job = st.job;
@@ -453,7 +516,7 @@ function fillSync(data) {
   } else if (st.last && st.last.at) {
     $('syncHint').textContent = '上次 ' + fmtTime(st.last.at) + ' · ' + st.last.mode + ' · files=' + st.last.files;
   } else {
-    $('syncHint').textContent = '尚未同步';
+    $('syncHint').textContent = '还没有同步过：勾好范围后点「开始同步」（本机 = 主机时是上传）';
   }
   $('btnSyncRun').disabled = !!st.running;
   $('btnSyncCancel').disabled = !st.running;
@@ -506,7 +569,9 @@ async function saveSyncQuiet() {
       syncLockMinutes: Number($('syncLockMinutes').value),
       syncDlDir: $('syncDlDir').value.trim(),
       syncPrune: $('syncPrune').checked,
+      syncProfile: $('syncProfile').value.trim(),
       syncDirs: pickedSyncDirs(),
+      syncFiles: pickedSyncFiles(),
     }) });
     refreshSync();
   } catch (error) {
@@ -599,6 +664,34 @@ $('btnSyncCancel').onclick = async () => {
   try { await api('/sync/cancel', { method: 'POST' }); refreshSync(); }
   catch (error) { $('syncHint').textContent = String(error.message || error); }
 };
+// ---- 原生「浏览…」：调宿主弹系统选择框（失败就提示手填） ----
+document.addEventListener('click', async (event) => {
+  const btn = event.target && event.target.closest ? event.target.closest('button[data-pick]') : null;
+  if (!btn) return;
+  const input = $(btn.getAttribute('data-target'));
+  if (!input) return;
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '选择中…';
+  try {
+    const body = await api('/pick', {
+      method: 'POST',
+      body: JSON.stringify({
+        kind: btn.getAttribute('data-pick') === 'file' ? 'file' : 'dir',
+        initial: input.value.trim(),
+        title: btn.getAttribute('data-title') || '',
+      }),
+    });
+    if (body.path) input.value = body.path;
+    $('err').textContent = '';
+  } catch (error) {
+    $('err').textContent = '没用候选框，可以直接手填：' + String(error.message || error);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+});
+
 loadKey();
 refresh();
 refreshSync();
