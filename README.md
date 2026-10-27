@@ -371,6 +371,9 @@ node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口�
 - 版本查询四级兜底：GitHub API（`contents` + raw accept）→ `raw.githubusercontent.com` → 两个镜像；全挂时给出逐条失败原因，不会假装「已是最新」。
 - 更新完成后明确提示「重启 DSH 生效」，不做自动重启（重启会掐掉正在跑的同步）。
 - 路由 14 → 16（`/update`、`/update/run`）；测试环境变量 `DSH_AB_NO_UPDATE_CHECK=1` 可关掉首次自动检查（smoke 用它避免打网络）。
+- 修：宿主给子进程注入了同一个 `DSH_PROFILE`，导致 `--profile X` 起的实例把别的 profile 当成「正在用」，顺手按错的 profile 判断要不要更新；现在优先用「已加载模块自己的路径」反推（`realDir === SELF_ROOT` → 路径里含 `/profiles/<名>/` → `DSH_PROFILE` → 第一个）。
+- 修：更新替换完文件后磁盘版本已经是新版，`pendingRestart` 立刻变 false，界面会显示「已是最新」，用户不知道该重启；现在模块加载时把版本记成 `LOADED_VERSION`，「当前版本」永远显示运行中的那个，`installed > LOADED_VERSION` 才算「重启后生效」。
+- 实测：github 安装路径（把已装 0.5.0 的版本号改成 0.4.0 冒充旧版 → 点更新 → 4 秒换完 → `current 0.4.0 / installed 0.5.0 / pendingRestart true` → 重启后 `current 0.5.0`）、link 安装路径（本地 bare remote 造 0.5.1 → `git pull --ff-only` fast-forward → `完成：plink → 0.5.1`）。
 
 ### 0.4.4
 
