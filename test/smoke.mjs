@@ -88,36 +88,48 @@ function safeJson(text) {
 
 const base = '/api/dsh-aliyunpan-backup';
 
+// 备份（打包上传）链路整个下掉了：路由表里不该再有 /run、/cancel
+assert.equal(routes.has(base + '/run'), false, 'no /run route (backup pipeline removed)');
+assert.equal(routes.has(base + '/cancel'), false, 'no /cancel route');
+assert.ok(routes.has(base + '/restore'), 'decode route present');
+assert.ok(routes.has(base + '/inspect'), 'inspect route present');
+
 const config = await call(base + '/config');
 assert.equal(config.status, 200, 'GET /config status');
 assert.equal(config.json.ok, true);
-assert.equal(config.json.config.keep, 3, 'default keep');
 assert.ok(config.json.view.stagingDir, 'staging dir resolved');
-assert.ok(config.json.view.remoteDir.startsWith('/'), 'remote dir');
+assert.equal(typeof config.json.view.restoreDir, 'string', 'restore dir exposed');
+assert.equal(config.json.config.keep, undefined, 'backup-only keep field is gone');
 
-const saved = await call(base + '/config', { method: 'POST', body: { keep: 7, includeFeishuFiles: true, remoteDir: '/DeepSeek Harness/DSH-Backup', dshHome: tmpHome, bogus: 1 } });
+const saved = await call(base + '/config', { method: 'POST', body: { stagingDir: tmpHome, dshHome: tmpHome, bogus: 1 } });
 assert.equal(saved.status, 200, 'POST /config status');
-assert.equal(saved.json.config.keep, 7, 'keep saved');
-assert.equal(saved.json.config.includeFeishuFiles, true, 'feishu saved');
+assert.equal(saved.json.config.stagingDir, tmpHome, 'staging saved');
 assert.equal(saved.json.config.bogus, undefined, 'unknown key rejected');
 assert.ok(fs.existsSync(path.join(tmpHome, 'config.json')), 'config file written');
 
-const badSave = await call(base + '/config', { method: 'POST', body: { keep: 'abc' } });
+const badSave = await call(base + '/config', { method: 'POST', body: { bogus: 1 } });
 assert.equal(badSave.status, 400, 'no valid fields -> 400');
 
 const status = await call(base + '/status');
 assert.equal(status.status, 200);
 assert.equal(status.json.state.running, false, 'idle');
-assert.ok(Array.isArray(status.json.snapshots), 'snapshots array');
+assert.ok(Array.isArray(status.json.packages), 'packages array');
 assert.equal(typeof status.json.log.text, 'string', 'log text');
+
+const insp = await call(base + '/inspect', { url: base + '/inspect?pkg=' + encodeURIComponent(path.join(tmpHome, 'nope')) });
+assert.equal(insp.status, 200, 'inspect status');
+assert.equal(insp.json.found, false, 'inspect reports missing payload.enc');
 
 const ui = await call(base + '/ui');
 assert.equal(ui.status, 200);
 assert.match(ui.headers['content-type'], /text\/html/);
-assert.match(ui.text, /阿里云盘备份/);
+assert.match(ui.text, /阿里云盘同步/);
 assert.match(ui.text, /\/api\/dsh-aliyunpan-backup/);
 assert.match(ui.text, /同步（多机共享/, 'ui has the sync card');
 assert.match(ui.text, /开始同步/, 'ui has the sync run button');
+assert.match(ui.text, /解码本地包/, 'ui has the decode card');
+assert.match(ui.text, /payload\.enc/, 'ui explains the package format');
+assert.doesNotMatch(ui.text, /立即备份并上传/, 'backup button removed');
 
 const log = await call(base + '/log', { url: base + '/log?lines=5' });
 assert.equal(log.status, 200);
@@ -158,12 +170,9 @@ assert.equal(badSync.status, 400, 'bad sync mode rejected');
 const nothingToCancel = await call(base + '/sync/cancel', { method: 'POST' });
 assert.equal(nothingToCancel.json.ok, false, 'cancel without running sync');
 
-const badMode = await call(base + '/run', { method: 'POST', body: { mode: 'nope' } });
-assert.equal(badMode.status, 400, 'bad mode rejected');
-
-const badRestore = await call(base + '/restore', { method: 'POST', body: { snapshot: '/definitely/not/here' } });
-assert.equal(badRestore.status, 409, 'restore without snapshot -> 409');
-assert.match(badRestore.json.error, /找不到快照/);
+const badRestore = await call(base + '/restore', { method: 'POST', body: { pkg: '/definitely/not/here' } });
+assert.equal(badRestore.status, 409, 'restore without a real package -> 409');
+assert.match(badRestore.json.error, /找不到包/);
 
 // 非 loopback 拒绝
 const handler = routes.get(base + '/status');
@@ -252,7 +261,6 @@ assert.ok(component(undefined), 'config seat (no subject) -> renders');
 const rendered = component({ subject: { kind: 'bundle', pkg: { name: 'dsh-aliyunpan-backup', installed: true } } });
 assert.ok(rendered, 'own bundle -> renders');
 assert.equal(typeof rendered.type, 'function', 'renders the inner component');
-// 内层组件（hooks 由替身提供）应产出 section
 const inner = rendered.type();
 assert.equal(inner.type, 'section', 'inner renders a <section>');
 const textOf = (node) => {
@@ -262,22 +270,21 @@ const textOf = (node) => {
   return String(node);
 };
 const blob = textOf(inner);
-assert.match(blob, /阿里云盘备份/, 'panel shows title');
-assert.match(blob, /立即备份并上传/, 'panel shows run button');
+assert.match(blob, /阿里云盘同步/, 'panel shows title');
+assert.doesNotMatch(blob, /立即备份并上传/, 'backup button gone');
+assert.match(blob, /同步上传/, 'panel offers one-click sync upload');
+assert.match(blob, /从机拉取/, 'panel offers pull');
 assert.match(blob, /打开完整配置页/, 'panel shows the full page toggle');
 assert.match(blob, /复制配置页地址/, 'panel offers a copy-link fallback');
-assert.match(blob, /同步上传/, 'panel offers the one-click sync upload');
-assert.match(blob, /同步：/, 'panel shows sync summary line');
+assert.match(blob, /可解码的包/, 'panel mentions the decode capability');
 // 宿主里 target=_blank 会被弹窗策略拦掉：配置页改为卡片内嵌 iframe（点击前不渲染），
 // 因此这里断言「没有外链 anchor」。
 const hrefs = [];
-const frames = [];
 const walk = (node) => {
   if (node === null || node === undefined || node === false) return;
   if (Array.isArray(node)) return node.forEach(walk);
   if (typeof node !== 'object') return;
   if (node.props && typeof node.props.href === 'string') hrefs.push(node.props.href);
-  if (node.type === 'iframe' && node.props && typeof node.props.src === 'string') frames.push(node.props.src);
   walk(node.props && node.props.children);
 };
 walk(inner);

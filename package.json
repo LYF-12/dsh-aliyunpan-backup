@@ -1,7 +1,7 @@
 {
   "name": "dsh-aliyunpan-backup",
-  "version": "0.3.0",
-  "description": "DSH 备份与同步插件：一条链路把配置/插件装配/会话/附件打包成 AES-256-GCM 加密快照传到阿里云盘，另一条链路按目录做增量镜像同步（一主多从）。设置→插件里有带图标的配置界面。",
+  "version": "0.4.0",
+  "description": "DSH 云同步插件：把 .dsh 里选定的目录（会话/附件/素材/配置等）逐目录增量镜像到阿里云盘，一主多从；随时拉回另一台机器的改动。附带本地包解码器，可校验/解包任意 payload.enc（含别人分享的）。设置→插件里有带图标的配置界面。",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
@@ -56,8 +56,9 @@
     "dsh",
     "dsh-plugin",
     "aliyunpan",
-    "backup",
-    "encrypted-backup"
+    "sync",
+    "cloud-sync",
+    "decode"
   ],
   "license": "MIT",
   "repository": {

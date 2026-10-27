@@ -1,396 +1,306 @@
 # dsh-aliyunpan-backup
 
-把 **DeepSeek Harness（DSH）** 的配置、插件装配、会话记录与附件，打包成 **加密快照** 并同步到 **阿里云盘** 的 DSH 插件。
-装上之后，**设置 → 插件 → 本插件** 页面里就有一个带图标的配置面板：点一下「立即备份并上传」即可，云端按份数自动滚动清理。
+把 **DeepSeek Harness（DSH）** 的数据同步到 **阿里云盘** 的 DSH 插件：会话、附件、工作区索引、任务板等目录**逐目录增量镜像**，一台主机推、多台从机拉。
+顺手还带一个**解码器**：本地或别人分享的 `payload.enc` 备份包，可以校验完整性、解包落盘。
 
-- 一条链路：扫描 → 打包（DSHBUNDLE1 容器）→ AES-256-GCM 分块加密 → 上传阿里云盘 → 回读/逐文件校验 → 清理旧快照
-- 第二条路：**逐目录镜像同步**——把 `sessions` / `attachments` 等目录按文件推到云盘，云端就是原始目录树，一主多从，不需要口令（见 §5）
-- 加密：口令（KEY.txt）**只在本机**，云端只有密文；换机器还原时把 KEY.txt 一起带过去
-- 界面：设置里一个配置卡片 + 一个完整配置页（`/api/dsh-aliyunpan-backup/ui`）
+- 同步是**明文镜像**：云端就是原始目录树，不用口令，能直接在网页版云盘里看/下载（见 §5）
+- 解码只处理加密包：口令（KEY.txt）**只在本机**，云端只有密文；解别人分享的包时在页面里临时填对方的口令即可（见 §6）
+- 界面：设置 → 插件 → 本插件里一个配置卡片；另有完整配置页 `/api/dsh-aliyunpan-backup/ui`
 - 宿主半侧只依赖 `webServer` 一个服务，浏览器半侧只 require `react`
 
 ---
 
-## 1. 安装
+## 1. 能力边界
 
-### 1.1 从 GitHub 安装（推荐）
-
-仓库已发布：**https://github.com/LYF-12/dsh-aliyunpan-backup**（Public，main 分支）
-
-在 DSH 里 **设置 → 插件（插件市场）→ 添加插件**，粘贴：
-
-```
-github:LYF-12/dsh-aliyunpan-backup
-```
-
-也接受固定提交与目录形式：
-
-```
-github:LYF-12/dsh-aliyunpan-backup#<commit-sha>
-https://github.com/LYF-12/dsh-aliyunpan-backup/tree/main
-```
-
-命令行等价写法（已实测，pnpm 直取 tarball，2.7s）：
-
-```powershell
-& "$env:LOCALAPPDATA\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd" `
-  plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup
-```
-
-安装后 **重启 DSH**，在 设置 → 插件 里能看到本插件的图标与配置页。
-
-> 走命令行 `dsh plugin add` 时，profile 的 `dsh.profile.bundles` 不会自动追加本包（实测）；
-> 走插件市场「添加插件」则会在安装流程里一并登记 bundle。若用命令行安装且界面没出现，
-> 到 `%USERPROFILE%\.dsh\profiles\<profile>\package.json` 的 `dsh.profile.bundles` 数组里补一行
-> `"dsh-aliyunpan-backup"` 再重启。
-
-### 1.2 本机源码安装（开发用，已实测）
-
-DSH 自带 CLI 就是官方的安装入口，它会把包写进 profile 的依赖并追加到该 profile 的 bundle 层：
-
-```powershell
-# DSH 安装目录下的 runtime\cli\bin\dsh.cmd
-& "C:\Users\<你>\AppData\Local\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd" `
-  plugin --profile desktop add link:D:\Code\deepseek\cs\dsh-aliyunpan-backup
-```
-
-实测输出：`+ dsh-aliyunpan-backup 0.1.0 <- D:\Code\deepseek\cs\dsh-aliyunpan-backup`，
-profile 的 `dsh.profile.bundles` 自动追加 `dsh-aliyunpan-backup`。装完**重启 DSH**生效。
-
-> 注意：DSH 内置插件管理器的 update/install 对「已在 profile 里声明」的包会返回 `already-installed`（上游问题）。
-> 手动升级请用上面的 bundled pnpm，并把目标版本追加进 `pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude`。
-
-### 1.3 改完代码怎么再推上去
-
-远端 = `origin` → https://github.com/LYF-12/dsh-aliyunpan-backup.git，已配好 Git 凭据管理器（GCM），
-本机凭据已存（`LYF-12`），直接：
-
-```powershell
-cd D:\Code\deepseek\cs\dsh-aliyunpan-backup
-git add -A; git commit -m "your change"; git push
-```
-
-> 本机实测 `github.com:443` 时通时不通（api.github.com 一直通）。若 `git push` 报
-> `Could not connect to server` / `Connection timed out`，重试即可；实在不通时可走
-> GitHub REST 的 Git Data API 提交（blobs → trees → commits → refs）。
+| 能力 | 状态 | 说明 |
+| --- | --- | --- |
+| 逐目录增量同步到阿里云盘 | 可用 | 一主多从；上传/拉取都做增量比对 |
+| 拉回另一台机器的改动 | 可用 | 先下到暂存目录，再由 Node 逐文件比对，**不覆盖正在运行的 DSH** |
+| 校验加密包完整性 | 可用 | `payload.enc` 任意位置，按 manifest 逐个 sha256 |
+| 解包加密包 | 可用 | 默认落到暂存目录，不覆盖 `.dsh`，人工挑回 |
+| 按模块勾选同步内容 | 部分 | 从 10 个白名单目录里多选，不能选任意路径 |
+| 打包 + 加密 + 上传 | **已移除**（0.4.0） | 上传交给同步链路；旧包仍可解码 |
+| 双向实时同步 | 不支持 | 需要手动点「开始同步」，多机靠锁与索引避免互相踩 |
 
 ---
 
-## 2. 依赖：aliyunpan CLI
+## 2. 安装
 
-上传/下载走社区 CLI **aliyunpan**（v0.4.x，作者 tickstep），它复用你自己的阿里云盘登录态，插件本身不保存任何网盘令牌。
+### 2.1 从前置条件说起：aliyunpan CLI
 
-1. 下载 `aliyunpan.exe`（Windows x64/arm64 均可）放到任意目录，例如 `D:\Tools\aliyunpan\aliyunpan.exe`
-2. 在该目录执行一次 `aliyunpan login`：终端会打印一个 **5 分钟内有效**的链接，浏览器里点「允许」后回到终端按一次回车
-3. `aliyunpan who` 能看到 UID / 昵称即成功（客户端里的登录态与 CLI 是两套，必须单独登一次）
+插件本身不实现阿里云盘协议，它调用官方命令行工具 `aliyunpan`（aliyunpan-go）。先装好并登录一次：
 
-插件按这个顺序找 `aliyunpan`，换一台 Windows 机器不用改代码：
+```powershell
+# 1) 拿到 aliyunpan.exe（任选其一）
+#    - 官方 release 解压到任意目录
+#    - 或放进 PATH 里的某个目录
+# 2) 登录（会打开浏览器/扫码，凭据存到本机配置目录）
+aliyunpan login
+# 3) 确认能列目录
+aliyunpan ls "/"
+```
 
-1. 配置页里手填的「aliyunpan 可执行文件」
-2. 遗留路径：本机以前放过的位置（存在才用，不存在跳过）
-3. 插件数据目录：`%USERPROFILE%\.dsh\dsh-aliyunpan-backup\aliyunpan.exe`
-4. 常见安装位置：`%LOCALAPPDATA%\Programs\aliyunpan\`、`C:\Program Files\aliyunpan\`
-5. **PATH**：任何已在 `PATH` 里的 `aliyunpan.exe`（最省事：装好后命令行能直接敲 `aliyunpan` 就行）
+插件按这个顺序找可执行文件：配置项 `aliyunpanExe` → 几个常见安装位置 → **`PATH` 里每一项**。所以只要 `aliyunpan` 在 PATH 里，什么都不用配。
 
-每台机器都要各自 `aliyunpan login` 一次（登录态不跟备份包走）。
+### 2.2 装插件（官方 CLI）
+
+```powershell
+# GitHub 安装（需要能访问 github.com）
+dsh plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup
+
+# 本地开发：直接链到工作副本，改完代码重启即生效
+dsh plugin --profile desktop add link:D:\Code\deepseek\cs\dsh-aliyunpan-backup
+```
+
+> ⚠ 命令行 `dsh plugin add` 只写 `dependencies`，**不会**自动登记 `dsh.profile.bundles`。检查 `~/.dsh/profiles/desktop/package.json` 的 `dsh.profile.bundles` 里有没有 `dsh-aliyunpan-backup`，没有就手动加一行，否则启动时不会被装配。插件市场 UI 安装会自动登记。
+
+装完**重启 DSH**，打开 设置 → 插件，找到本插件即可。
 
 ---
 
 ## 3. 界面
 
-| 位置 | 内容 |
+设置 → 插件 → 本插件是一张卡片：状态徽标、上次结果、四个按钮。
+
+| 按钮 | 作用 |
 | --- | --- |
-| 设置 → 插件 → 本插件（官方 keyed 席位 `plugins.bundle.config`） | 状态徽标（运行中 / 上次成功 / 上次失败）、最新快照、**立即备份并上传 / 只打包校验 / 取消 / 刷新 / 打开完整配置页 / 复制配置页地址**。配置页在卡片内**内嵌 iframe** 展开（宿主里 `target=_blank` 会被弹窗策略拦掉，所以不再开新标签） |
-| 完整配置页 `/api/dsh-aliyunpan-backup/ui` | 配置表单、本地快照列表（逐份校验 / 解包）、**同步面板**（模式 / 云端目录 / 目录白名单 / 机器名 / 互斥分钟 / 下载暂存目录 / 拉取删除多余文件）、实时运行日志 |
-| 同步按钮（卡片内「同步上传」；完整配置页里还有「同步拉取」「只算差异」「取消」） | 主机增量上传 / 从机镜像拉取，状态行显示 `同步：主机上传 → /DeepSeek Harness/DSH-Sync · 上次 …（files=N）` |
+| 同步上传 | 把本机选中的目录推到云端（增量） |
+| 从机拉取 | 把云端内容拉回本机（增量 + 可选严格镜像） |
+| 刷新 | 重新读状态/日志 |
+| 打开完整配置页 / 复制配置页地址 | 卡片里内嵌完整页面；宿主拦弹窗时用复制地址 |
 
-配置项：
-
-| 字段 | 默认 | 说明 |
-| --- | --- | --- |
-| `remoteDir` | `/DeepSeek Harness/DSH-Backup` | 云端目录（快照落在其下的 `snapshots/`） |
-| `stagingDir` | `D:\DSH-Backup`（不存在则用插件数据目录） | 本地暂存：快照 + `KEY.txt` + 最近一次日志 |
-| `keep` | `3` | 云端保留份数，`0` 表示不清理 |
-| `aliyunpanExe` | 自动探测 | aliyunpan 可执行文件路径 |
-| `dshHome` | `%USERPROFILE%\.dsh` | 要备份的 DSH 数据目录 |
-| `keyFile` | `<stagingDir>/KEY.txt` | 口令文件；首次运行自动生成 24 位随机口令；换机器时用配置页的「口令」卡片粘贴旧口令 |
-| `includeFeishuFiles` | `false` | 是否收录 `feishu\files`（收到的文档/压缩包，约 +270MB） |
-| `includeCredentials` | `false` | 是否收录 `.credentials.yaml` / `.npmrc`（登录凭据）；默认不收，换机后重新登录 |
-| `restoreDir` | 空 | 「解包」输出目录；留空 = `<stagingDir>\restore\<快照名>` |
-
-配置保存在 `%USERPROFILE%\.dsh\dsh-aliyunpan-backup\config.json`（可用环境变量 `DSH_AB_HOME` 改数据目录）。
-
-同步（`syncDir` / `syncMode` / `syncDirs` / `syncMachine` / `syncLockMinutes` / `syncDlDir` / `syncPrune`）是另一组配置，见 §5。
+完整配置页（`/api/dsh-aliyunpan-backup/ui`）六张卡：同步、解码本地包、口令、路径配置、日志。
 
 ---
 
-## 4. 备份了什么
+## 4. 一次性准备（主机）
 
-| 采集 | 规则 |
-| --- | --- |
-| `.dsh` 根级文件 | 全收（`pet.json`、设置等普通文件） |
-| `storages` / `task-board` / `feishu` / `eda` / `skins` / `sessions` / `attachments` | 全收 |
-| `pets` | 只收 `.json` |
-| `profiles` | 只收 profile 根级：`package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`、`cordis.patch.yml`、`*.patch.yml*`、`.npmrc` 与小配置 |
-| `sources` | 只收 ≤2 层小配置 |
-| 跳过 | `node_modules`、`.git`、`dist`、`.pnpm-store`、`cache`、`backups` |
-
-> **凭据（默认不进包）**：`.credentials.yaml`（API key、设备令牌）与 `.npmrc` 默认**不收录**；勾选 `includeCredentials` 才收（仍会 AES-256-GCM 加密）。换机还原后按提示重新登录即可。
->
-> **每次都是全量快照**：不做增量（否则跨版本/跨机恢复容易残缺），所以每次约 215MB（不含飞书文件）/ 486MB（含）；云端保留最近 `keep` 份，旧包自动删除。
-
-**实测体积**（2026-10-26，本机）：不含飞书文件约 215MB，含则约 486MB；上传约 5MB/s、下载约 0.4MB/s。
-
-### 4.1 只想同步「另一份内容」怎么办
-
-现在能调的维度（都在配置里，不用改代码）：
-
-| 想做的事 | 怎么配 |
-| --- | --- |
-| 不收飞书文件（省 270MB） | `includeFeishuFiles=false`（默认） |
-| 连登录凭据一起带走 | `includeCredentials=true` |
-| 备份另一台机器 / 另一个 `.dsh` | 改 `dshHome` 指向那个目录 |
-| 放到网盘另一个位置 | 改 `remoteDir`（会自动在其下建 `snapshots/`） |
-| 本地留更多/更少份数 | `stagingDir` + 手工清理；云端份数用 `keep` |
-
-**暂时不支持**按模块逐项勾选（比如「只要会话不要附件」）——采集规则固定在 `lib/scripts/build.mjs` 的 `INCLUDE_DIRS` / `SKIP_DIRS`，要改成自定义清单得改代码。
-
-### 4.2 多套方案并存
-
-插件只有一份配置，但可以起两个独立实例（不同数据目录 + 不同云端目录）互不干扰：
-
-```powershell
-$env:DSH_AB_HOME = "C:\Users\LYF\.dsh-backup-b"   # 各自的 config.json / KEY.txt / staging
-```
-
-不过同一台机器上通常没必要，`keep` 已经能保留历史版本。
+1. `aliyunpan login` 登录（每台机器各自登录）。
+2. 打开完整配置页，在「同步」卡片勾选要同步的目录（默认 `sessions` / `attachments` / `storages` / `task-board`）。
+3. 点「预演」看一眼文件数与体积，再点「开始同步」做首次全量上传。
+4. 同步设置点「保存同步设置」持久化（机器名会自动取计算机名）。
 
 ---
 
-## 5. 同步（逐目录镜像，不打包不加密）
+## 5. 同步（逐目录镜像）
 
-§3–§6 那条线是「加密快照」：整包、全量、要口令才能解。这里还有第二条线——**逐目录镜像同步**：
-把 `.dsh` 里的数据目录按文件直接推到云盘，云端就是原始目录树，另一台机器拉回来即可用。
+### 5.1 上传（主机 → 云端）
 
-**模型：一主多从。** 同一时间只让一台机器同步（推荐「主机上传」），其它机器需要时「从机拉取」。
+每个目录一个云端前缀：`<syncDir>/<目录名>`，默认 `/DeepSeek Harness/DSH-Sync/sessions` 等。
 
-| 配置 | 默认 | 说明 |
-| --- | --- | --- |
-| `syncDir` | `/DeepSeek Harness/DSH-Sync` | 云端根目录，下面是 `sessions/`、`attachments/`… |
-| `syncMode` | `upload` | `upload` = 主机；`download` = 从机 |
-| `syncDirs` | `sessions` `attachments` `storages` `task-board` | 只允许白名单目录，绝不整个 `.dsh` 上云（`profiles` / `node_modules` / `runtimes` 一律不碰） |
-| `syncMachine` | 计算机名 | 云端留痕 `_last-sync-<机器>.json`，用于互斥提醒 |
-| `syncLockMinutes` | `60` | 别的机器 60 分钟内同步过就警告；`0` 关闭检查 |
-| `syncDlDir` | `<插件数据目录>/sync-dl` | **从机下载暂存目录**（见 5.3 的坑） |
-| `syncPrune` | `false` | 拉取时是否删除本机多余文件（严格镜像）；默认只增不删 |
+- **增量靠本地索引**：`sync-index.json` 记录 `相对路径 → {size, mtime}`。
+  - 新增文件 → `upload --skip`（云端同名则跳过，不会产生 `name(1).ext` 副本）
+  - 修改文件 → `upload -ow`（覆盖）
+  - 无变化 → 零上传，秒回。
+- 索引不存在（首次同步 / 索引被删）→ 该目录走**全量 `-ow`**，避免「按名字跳过」导致内容永远停留在旧版本。
+- 上传按云端父目录分组、每批 ≤20 个文件，`-p 4` 并发。
+- `syncPrune` 打开时，云端多余文件会被删（默认关闭）。
 
-### 5.1 上传（主机）怎么判断增量
+### 5.2 拉取（云端 → 从机）
 
-`aliyunpan upload` 本身没有「只传变化」的能力：同名文件它会新建 `名字(1).ext`，加 `-ow` 则把旧版本丢进回收站。
-所以插件自己维护 `<插件数据目录>\sync-index.json`（相对路径 → 大小 + 修改时间）：
+```text
+# 1) CLI 只负责把云端目录下到暂存区
+# 2) Node 再按 size+mtime 逐文件镜像进 .dsh
+aliyunpan download --saveto <暂存目录> --ow -p 3 <云端目录>
+```
 
-- 新增文件 → `upload --skip` 一次性补齐（云端已有的按名字跳过，不会产生 `(1)` 副本）
-- 修改过的文件 → 按云端父目录分组，`upload -ow` 精确覆盖（旧版本进回收站）
-- 全部没变 → 直接跳过，零上传
+**不让 CLI 直接写 `.dsh`** 的原因有两条：CLI 会自作主张多建一层 `DeepSeek Harness\DSH-Sync\` 目录；而且要逐文件比对才能做到「只写变化的部分」。所以先用 CLI 下到 `syncDlDir`，再由 Node 复制。
 
-### 5.2 拉取（从机）怎么落地
+- 默认**只增不删**：本机多出来的文件保持原样。
+- `syncPrune` 打开 = 严格镜像，会删本机多余文件。**先确认再开。**
+- 拉取前请先退出 DSH：正在运行的应用握着会话文件，Windows 上写盘会被拒。
 
-`aliyunpan download --saveto <syncDlDir> --ow <云端目录>` 先把文件下到**暂存目录**（保留完整云端路径），
-插件再用 Node 逐个比较大小与修改时间，只把变化的文件复制进 `.dsh`，最后删掉暂存副本。
+### 5.3 多机与锁
 
-- 为什么不让 CLI 直接写 `.dsh`：它会按云端路径建目录，直接写会多出一层 `DeepSeek Harness\DSH-Sync\`
-- 拉取默认**只增不删**；要严格镜像就打开 `syncPrune`
-- 下载走 `-p 3` 并发，单文件约 1–4 秒；实测 4 个小文件 8 秒、1 个 6 秒。已知代价：`--ow` 会把云端目录里的文件全量重下一次（只有这样才能可靠发现「内容变了」），几百个附件就是几分钟；上传侧靠秒传，重复内容几乎不耗流量
+- 每台机器写入 `_last-sync-<机器名>.json`，借此判断「另一台机器最近是否同步过」。
+- `syncLockMinutes`（默认 60）内有其它机器活动时：默认只**告警**继续，`--strict` 下直接退出。
+- 两台机器同时上传同一批文件没有合并逻辑：**约定一台主机推、其它只拉**最省事。
 
-### 5.3 三个必须知道的坑
+### 5.4 三个坑
 
-1. **安全软件会拦 aliyunpan 的写盘**。实测本机（深信服 aES）：`aliyunpan` 只在开发工作区里建目录成功，
-   写 `%USERPROFILE%\.dsh`、`%TEMP%`、`D:\` 其它位置一律 `mkdir …: Access is denied`。
-   插件依次尝试 `syncDlDir` → `<数据目录>\sync-dl` → `%TEMP%\dsh-aliyunpan-sync` → `%USERPROFILE%\dsh-aliyunpan-sync`，
-   全被拦时打印 `[hint]` 并以退出码 `5` 结束。处理办法：把 `syncDlDir` 指到被放行的目录，或给 `aliyunpan.exe` 加信任。
-2. **不要用 `aliyunpan sync start`**。它的任务状态按「云盘目录名」派生，同机先传后拉会互相污染（认为已同步而跳过，甚至永久挂住）。
-   本插件改用 `upload` / `download` 两个确定性命令，镜像逻辑握在自己手里。
-3. **先从机退出 DSH 再拉取**。拉取会覆盖 `.dsh` 里的会话/附件，DSH 正在跑时可能写完又被内存刷回。
+1. `Access is denied` / 暂存目录被拦 → 安全软件拦了 `aliyunpan.exe` 写盘。日志会打 `[hint]`，把 `syncDlDir` 换到允许的目录，或给 exe 加白。
+2. 不要用 `aliyunpan sync start`（CLI 自带同步）。它自己维护状态、和本插件的索引互相打架，行为不可预期。
+3. 先退出 DSH 再拉取，否则 `ledger-v2.lock` 之类的锁文件写不进去。
 
-### 5.4 命令行等价
+### 5.5 命令行等价物
 
 ```powershell
-node lib/scripts/syncd.mjs --mode upload          # 主机上传（增量）
-node lib/scripts/syncd.mjs --mode download --prune  # 从机拉取 + 严格镜像
-node lib/scripts/syncd.mjs --mode plan           # 只看统计，不动云端也不写本地
-node lib/scripts/syncd.mjs --mode upload --force # 忽略索引，全部按 -ow 重传
+# 预演：只统计，不动云端
+node lib/scripts/syncd.mjs --mode plan
+# 上传 / 拉取
+node lib/scripts/syncd.mjs --mode upload
+node lib/scripts/syncd.mjs --mode download --prune
+# 加 --strict：发现其它机器活动就退出
 ```
 
-每次结束打印一行 `SYNC RESULT: mode=… roots=… files=… failed=…`（插件靠这行判断成功/失败，退出码 0/4/5）。
-## 6. 包格式
-
-```
-DSHBUNDLE1\n + u32 条目数 + [u32 名长][名][u64 大小][数据]…   # 首个条目固定 manifest.json（含每文件 sha256）
-```
-
-加密（`payload.enc`）：
-
-```
-'DSHBK002'(8) + salt(16) + noncePrefix(4) + u64 plainBytes        # 36 字节头
-key = scrypt(口令, salt, 32, N=32768, r=8, p=1)
-1MiB 分块：nonce = noncePrefix(4)+块号(4)+0(4)，AAD = "dshbk-chunk-<i>"，每块 tag(16)+密文
-```
-
-`payload.enc` 旁边有 `package.info.json`（文件数、原始字节、bundle 字节、密文 sha256 等，**不含口令**）。
+输出末行固定是 `SYNC RESULT: mode=... roots=N files=N failed=N`。
 
 ---
 
-## 7. 还原
+## 6. 解码本地包
 
-界面里「本地快照 → 校验 / 解包」即可；命令行等价：
+给两类包用：**旧版 0.3.x 及更早**打的加密备份包、**别人分享**的包。
 
-```powershell
-# 只校验（解密 + 逐文件 sha256）
-node lib/scripts/restore.mjs --pkg "D:\DSH-Backup\snapshots\20261026T1512-full" --key "D:\DSH-Backup\KEY.txt" --verify-only
+### 6.1 包长什么样
 
-# 解包到指定目录
-node lib/scripts/restore.mjs --pkg "D:\DSH-Backup\snapshots\20261026T1512-full" --key "D:\DSH-Backup\KEY.txt" --out "D:\restore-test"
+```text
+<包目录>/
+  payload.enc          # 密文：36B header + 每 1MiB 一块 tag16|ciphertext
+  package.info.json    # 明文元信息：createdAt / fileCount / totalBytes
 ```
 
-界面里「解包」默认落到 `D:\DSH-Backup\restore\<快照名>`（可在配置里改 `restoreDir`），**不会直接覆盖 `.dsh`**——先看内容，再手工挑需要的目录复制回 `C:\Users\<你>\.dsh`。
+容器格式：`DSHBK002` | salt16 | noncePrefix4 | plainBytes(u64LE)，AES-256-GCM 分块，`scrypt(passphrase, salt, 32)`，AAD `dshbk-chunk-<i>`。明文是 `DSHBUNDLE1` 容器，内含 `manifest.json`（每个文件的路径/大小/sha256）。
 
-### 7.1 换电脑还原（0.2.0 起不用手拷 KEY.txt）
+### 6.2 页面上的操作
 
-**要带过去的只有一样东西：口令**（旧机器 `KEY.txt` 里那串字符）。云端 `payload.enc` 是 AES-256-GCM，没有口令谁也解不开，插件也救不回来。
+1. 「解码本地包」卡片里填路径：可以直接填 `payload.enc` 的完整路径，也可以填包目录（`...\20261026T1917-full`）。
+2. 「检查这个包」→ 显示文件数/体积/创建时间。
+3. 「校验完整性」→ 只解密比对，不落盘，结果 `verify: ok=N bad=0 missing=0`。
+4. 「解包」→ 落到 `输出目录`（留空 = 暂存目录 `restore\<包名>`），写一份 `RESTORE-manifest.json`。**不会覆盖 `.dsh`**，自己挑需要的文件拷回去。
 
-1. **旧机器**：配置页 →「口令」→ 点「显示口令」或「复制口令」→ 存进密码管理器 / 离线记录
-2. **新机器**：安装插件（见 §1.1）→ `aliyunpan login` → 配置页确认云端目录仍是 `/DeepSeek Harness/DSH-Backup`
-3. **新机器**：配置页 →「口令」→ 输入框粘贴旧口令 → 点「使用此口令」（写入本机 `KEY.txt`）
-4. 取回快照（名字必须与云端 `<id>` 一致）：
+口令那栏留空 = 用本机 `KEY.txt`；解别人的包时直接填对方给的口令（不走口令文件，也不会写盘）。
+
+卡片下方还会列出暂存目录 `snapshots\` 里扫到的包，点一行即可选中。
+
+### 6.3 换电脑还原旧包
 
 ```powershell
-aliyunpan config set -savedir "%USERPROFILE%\.dsh\dsh-aliyunpan-backup\staging\snapshots"
 aliyunpan ls "/DeepSeek Harness/DSH-Backup/snapshots"
-aliyunpan download "/DeepSeek Harness/DSH-Backup/snapshots/<id>"
+aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
+# 拿到对方/旧机器的 KEY.txt，或直接在解码卡片里填口令
 ```
 
-> **下载被平台拦时怎么办**（2026-10-26 本机实测：账号「备份盘」且未开通三方权益包，`aliyunpan download` 一律报「下载文件失败 / 数据总量 0B」，而上传完全正常）：改用**阿里云盘官方客户端 / 网页**打开 `/DeepSeek Harness/DSH-Backup/snapshots/<id>/`，把 `payload.enc` 与 `package.info.json` 下到本机 `<staging>\snapshots\<id>\` 目录（目录名必须与云端 id 一致），后续「校验 / 解包」流程不变。插件只读本地文件，不依赖 CLI 下载。
+然后在页面里校验 → 解包 → 挑文件拷回 `%USERPROFILE%\.dsh`。
 
-5. 插件界面「本地快照」里点「校验」→ 出现 `verify: ok=N bad=0` 说明口令与包匹配；再点「解包」
+### 6.4 退出码（命令行 / 日志）
 
-命令行等价（把路径换成你自己配置页显示的暂存目录）：
-
-```powershell
-node lib/scripts/restore.mjs --pkg "<staging>\snapshots\20261026T1512-full" --key "<staging>\KEY.txt" --verify-only
-node lib/scripts/restore.mjs --pkg "<staging>\snapshots\20261026T1512-full" --key "<staging>\KEY.txt" --out "D:\restore-20261026"
-```
-
-**多台机器共用一个云端目录时**：`keep` 是全局份数（不是每台各算），后来的备份会按顺序挤掉最早的；机器多了把 `keep` 调到机器数 ×2 以上，或者干脆设 `0` 不清理。逆序还原永远是「下载想要的 `<id>` 那一份」，不受影响。
-
-**新机器上暂存目录默认在哪？** 老机器若用过 `D:\DSH-Backup` 且该目录存在才沿用它；否则是插件数据目录 `%USERPROFILE%\.dsh\dsh-aliyunpan-backup\staging`。两处都在配置页「本地暂存目录」里显示，别写死。
+| 码 | 含义 |
+| --- | --- |
+| 0 | 成功 |
+| 2 | 缺参数（`--pkg` / `--out`） |
+| 3 | 不是 `DSHBK002` 容器（文件不对） |
+| 4 | `AUTH FAIL at chunk N`：口令错或包损坏 |
+| 5 | 明文不是 `DSHBUNDLE1`（包结构坏） |
+| 6 | 校验失败（有 bad/missing 文件） |
 
 ---
 
-## 8. 安全边界
+## 7. 配置项
 
-- 口令只存本机 `KEY.txt`（建议离线备份一份；**丢了密文无法恢复**）
-- 配置页「显示口令 / 复制口令」走宿主 loopback 接口，非本机请求一律 403；口令明文不会写进日志、不会进备份包
-- Windows 忽略 POSIX 权限位（`0o600` 实际不生效），`KEY.txt` 的隔离依赖 `%USERPROFILE%` 目录自身的 ACL（默认只有本用户可读），别把它拷到共享盘
-- 宿主接口只接受 **loopback** 请求，非本机一律 403
-- 配置写入走字段白名单
-- 插件不保存阿里云盘令牌，网盘登录态由 `aliyunpan` 自己持有
-- 日志只落本机 `<stagingDir>/last-run.log`，不含口令
+| 键 | 默认 | 说明 |
+| --- | --- | --- |
+| `dshHome` | `~/.dsh` | 要同步的 DSH 数据目录 |
+| `syncDir` | `/DeepSeek Harness/DSH-Sync` | 云端同步根 |
+| `syncDirs` | `[sessions, attachments, storages, task-board]` | 同步哪些目录（10 选多） |
+| `syncMode` | `upload` | `upload` / `download` |
+| `syncMachine` | 空 = 计算机名 | 锁与留痕用的机器标识 |
+| `syncLockMinutes` | `60` | 其它机器活动窗口；0 = 不检查 |
+| `syncDlDir` | 空 = 插件目录 `sync-dl` | 拉取暂存目录 |
+| `syncPrune` | `false` | 拉取时删本机多余文件 |
+| `stagingDir` | 空 = `D:\DSH-Backup`（存在时）否则 插件目录 `staging` | 包与解包临时区 |
+| `keyFile` | 空 = `staging\KEY.txt` | 本机口令文件 |
+| `restoreDir` | 空 = `staging\restore\<包名>` | 解包输出目录 |
+| `aliyunpanExe` | 空 = 自动探测 | CLI 路径 |
+
+配置存放在 `~/.dsh/dsh-aliyunpan-backup/config.json`（可用 `DSH_AB_HOME` 改插件数据目录、`DSH_AB_CONFIG` 直接指定配置文件）。
 
 ---
 
-## 9. 开发
+## 8. HTTP 路由（11 条，全部 exact + 仅 loopback）
 
-```powershell
-node test/smoke.mjs     # 宿主 12 条路由 + 浏览器半侧（vm 里加载 client.js，替身 react）
-node test/e2e.mjs       # 真跑一遍：打包 → 加密 → 校验 → 读日志 → 恢复校验
-```
+| 路由 | 方法 | 说明 |
+| --- | --- | --- |
+| `/api/dsh-aliyunpan-backup/ui` | GET | 完整配置页 |
+| `/status` | GET | 状态 + 可解码包列表 + 日志尾巴 |
+| `/config` | GET/POST | 读/存配置（字段白名单） |
+| `/inspect?pkg=` | GET | 探测某个路径是不是包 |
+| `/restore` | POST | 校验或解包（`pkg`/`out`/`passphrase`/`verifyOnly`） |
+| `/key` | GET/POST | 口令：查看/设置/生成 |
+| `/log` | GET | 解码日志 |
+| `/sync` | GET | 同步配置与最近状态 |
+| `/sync/plan` | GET | 预演统计 |
+| `/sync/run` | POST | 开始同步（`{mode}`） |
+| `/sync/cancel` | POST | 取消同步 |
 
-目录：
+---
 
-```
-lib/index.js        宿主半侧（name / inject:["webServer"] / apply → 12 条 exact 路由：备份 8 条 + 同步 4 条）
-lib/client.js       浏览器半侧（只 require react；挂 plugins.bundle.config 官方配置卡 + plugins.detail.section 详情区）
-lib/ui.html         完整配置页
-lib/config.mjs      配置读写 / 路径解析
-lib/runner.mjs      子进程任务（spawn、日志、状态）
-lib/scripts/*.mjs   build / restore / sync（也可独立运行）
-lib/syncplan.mjs    同步白名单与 roots 计算（upload 用）
-lib/syncrun.mjs     同步任务的宿主侧封装（跑 syncd.mjs、解析 SYNC RESULT）
-lib/scripts/syncd.mjs 同步引擎：sync-index.json 增量 + upload/download 镜像
-test/               smoke.mjs、e2e.mjs
-```
+## 9. 安全
+
+- **同步是明文**：云端目录可以直接打开看。会话与附件里有隐私内容，介意就别同步这些目录。
+- **口令只在本机**：`KEY.txt` 不随同步上传（它在插件数据目录，不在同步白名单里）。丢了口令，旧包就永久打不开。
+- `KEY.txt` 写入用 `mode: 0o600`，但 **Windows 忽略 POSIX 权限位**，实际靠 `%USERPROFILE%` 的目录 ACL 保护。
+- 日志只记路径、文件数、耗时、退出码，不记口令与文件内容。
+- 路由只接受 loopback 请求，非本机地址一律 403。
 
 ---
 
 ## 10. 常见问题
 
-**Q：安装后设置里看不到？** 重启 DSH。插件是 bundle 层，运行中的进程不会热插拔。
+**Q：第一次同步很久？** 全量上传，取决于体积。之后只传新增/修改。
 
-**Q：点「立即备份」报找不到 aliyunpan？** 在配置页填绝对路径；并确认 CLI 已单独 login 过（客户端登录不算）。
+**Q：云端出现 `name(1).ext`？** 说明同一次上传里出现了同名且未加 `--skip`。本插件新增走 `--skip` 不会产生副本；若已产生，删掉副本再同步一次。
 
-**Q：想只备份不清理云端？** 把 `keep` 设为 `0`。
+**Q：同步会不会把我整个 `.dsh` 传上去？** 不会，只传 `syncDirs` 里那几个目录，且跳过 `node_modules`、`.git`、符号链接。
 
-**Q：想更小的包？** 保持 `includeFeishuFiles = false`（默认），并把 `stagingDir` 放在空间充足的盘。
+**Q：两台机器同时同步会怎样？** 会互相覆盖。用 `syncLockMinutes` + 一主多从的约定。
 
-**Q：清理旧快照会真删吗？** `aliyunpan rm` 是移进回收站，可找回。
+**Q：解包会不会覆盖正在用的数据？** 不会。解到独立目录，自己挑。
 
-**Q：换另一台电脑要带走什么？** 只带口令 + 网盘账号：插件从 GitHub 装，快照从云端下，`.dsh` 本身不用拷。流程见 §7.1。
-
-**Q：口令忘了 / `KEY.txt` 丢了？** 云端快照就永久解不开了（AES-256-GCM，无后门）。要么从旧机器再复制一次，要么从你自己的密码记录里找；都没有就只能重新开始备份。所以第一次生成口令后请立刻存一份到密码管理器。
-
-**Q：`aliyunpan download` 报「下载文件失败 / 数据总量 0B」？** 不是你的操作问题：备份盘、以及未开通「三方权益包」的账号，CLI 走的是第三方接口，平台只放行上传不放行下载。用阿里云盘官方客户端把 `payload.enc` 与 `package.info.json` 下载到 `<staging>\snapshots\<id>\` 即可，插件只读本地文件。
-
-**Q：新机器点「校验」报「口令文件不存在」？** 这是 0.2.0 有意加的前置检查。去配置页「口令」粘贴旧口令即可，别去改 `keyFile` 路径。
-
-**Q：点「同步」报 `Access is denied` 或提示「无法写入任何暂存目录」？** 不是权限设置问题，是本机安全软件只放行 `aliyunpan.exe` 在特定目录写盘。把配置里的「下载暂存目录」指向被放行的目录（例如你的开发工作区），或给 `aliyunpan.exe` 加信任规则，再点一次。
-
-**Q：云端出现了 `attachments(1)` / `x.txt(1)` 这种副本？** 那是 `aliyunpan upload` 的默认行为（同名不覆盖、另建副本）。0.3.0 起上传前先比对本地索引：新增文件走 `--skip`、修改过的文件走 `-ow`，不会再产生副本。历史副本用 `aliyunpan rm` 删掉即可（进回收站）。
-
-**Q：同步会把整个 `.dsh` 传上去吗？** 不会。只传 `syncDirs` 白名单里的目录（默认 `sessions` / `attachments` / `storages` / `task-board`），`profiles` / `node_modules` / `dsh-runtimes` / `electron` / `cache` / 登录凭据一律不碰。
-
-**Q：两台机器同时同步会怎样？** 会互相覆盖。插件按「一主多从」设计：别的机器最近 `syncLockMinutes`（默认 60）分钟内留过同步标记时，本次只在日志里警告（加 `--strict` 则直接拒绝）；同一时间只让一台机器同步。
-
-**Q：为什么以前备份里 `profiles\<名字>\` 是空的？** 0.1.x 的采集规则只收 `profiles\` 根级文件，插件装配（`cordis.patch.yml`、`package.json`、锁文件）实际没进包；0.2.0 已修，现在会收 `profiles\<名字>\` 下的配置类文件（`node_modules` 仍排除）。
+**Q：还要备份加密包吗？** 0.4.0 起不做打包上传了。要异地留档：同步一份明文，或自行打包后传到云盘再解码。
 
 ---
 
-## 11. 变更记录
+## 11. 开发与测试
 
-**0.3.0（2026-10-26）— 真·同步（逐目录镜像，不打包不加密）**
-- 新：宿主侧 4 条路由 `/sync`、`/sync/plan`、`/sync/run`、`/sync/cancel`；卡片加「同步上传」按钮与同步状态行，完整配置页加同步面板
-- 新：`lib/scripts/syncd.mjs` 同步引擎。上传用 `sync-index.json`（大小 + 修改时间）判增量：新增走 `upload --skip`、修改走 `upload -ow`、无变化零上传；拉取走 `download --saveto` 到暂存目录，再用 Node 只把变化的文件镜像进 `.dsh`（默认只增不删）
-- 新：`plan` 只统计差异不动云端；`--force` 忽略索引重传；`--prune` / `syncPrune` 严格镜像；`syncDlDir` 可指定下载暂存目录
-- 修：**不用 `aliyunpan sync start`**（任务状态按云盘目录名派生，同机先传后拉会互相污染、甚至永久挂住），改走确定性的 `upload` / `download`
-- 修：安全软件拦住 `aliyunpan.exe` 写盘时，依次回退暂存目录候选，全被拦打印 `[hint]` 并以退出码 5 结束，不再笼统报「同步失败」
-- 修：互斥留痕改用 `upload -ow`，云端不再堆 `_last-sync-<机器>(1).json`
-- 文档：新增 §5 同步整章；后续章节顺延（包格式 §6、还原 §7、安全 §8、开发 §9、FAQ §10、变更记录 §11）
+```powershell
+node --check lib/index.js      # 宿主半侧
+node --check lib/client.js     # 浏览器半侧
+node test/smoke.mjs            # 路由/配置/UI/客户端组件断言（11 条路由）
+node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口令 → 解包 → 逐字节比对
+```
 
-**0.2.2（2026-10-26）— 按实测修正下载说明**
-- 文档：`aliyunpan download --saveto` 在 v0.4.0 不存在，改成 `config set -savedir` + `download <路径>`
-- 文档 + UI：账号为「备份盘」或未开通三方权益包时，CLI 下载会被平台拒绝（上传不受影响），改用阿里云盘官方客户端下载 `payload.enc` / `package.info.json` 到 `<staging>\snapshots\<id>\`
-- 「找不到快照」错误补上可操作的下载提示
+目录：
 
-**0.2.1（2026-10-26）— 口令与路径的安全兜底**
-- 修：设了 `DSH_AB_HOME`（隔离实例/多实例）时不再复用 `D:\DSH-Backup` 旧路径，避免串机、串口令
-- 换口令前自动把旧口令存成 `KEY.txt.bak`，`/key` 状态里返回 `backupFile` / `backup`
-
-**0.2.0（2026-10-26）— 换机可用性**
-- `aliyunpan` 按 配置 → 遗留路径 → 插件数据目录 → 常见安装位置 → **PATH** 探测，换机器不用改代码
-- 配置页新增「口令」卡片：显示 / 复制 / **粘贴旧机器口令** / 生成新口令；「校验」「解包」前若口令文件缺失直接给出可读错误
-- 修：`profiles\<名字>\` 下的配置类文件以前完全没进包（插件装配会丢），现在会收，`node_modules` 仍排除
-- 修：新机器暂存目录不存在时，子进程 `spawn` 的 `cwd` 无效导致任务静默失败（现在先建目录）
-- 修：`restore` 用配置里的 `keyFile`，不再硬编码 `<staging>\KEY.txt`
-- 修：解包按 `\` 与 `/` 两种分隔符归一化，包内路径不会再被压平成文件名
-- 路径解析统一遵循 `DSH_AB_HOME`；子进程只拿到 `DSH_AB_CONFIG` 时也能反推出正确数据目录
-
-**0.1.2** 配置页改为卡片内嵌 iframe（宿主拦住 `target=_blank`，点「打开完整配置页」原先没反应），并加「复制配置页地址」
-
-**0.1.1** 「解包」补 `--out`（原先按钮必失败）；默认不收录 `.credentials.yaml` / `.npmrc` 等凭据
-
-**0.1.0** 首个版本：打包 → AES-256-GCM → 上传 → 校验 → 按份数清理
+| 文件 | 作用 |
+| --- | --- |
+| `lib/index.js` | 宿主半侧：11 条路由 + 配置读写 + 口令 |
+| `lib/client.js` | 设置卡片：同步上传 / 从机拉取 / 内嵌完整页 |
+| `lib/config.mjs` | 默认值、白名单、路径解析、`aliyunpan` 探测 |
+| `lib/runner.mjs` | 解码任务：解析包路径、起子进程、日志/状态 |
+| `lib/syncplan.mjs` | 预演统计 |
+| `lib/syncrun.mjs` | 同步任务进程管理 |
+| `lib/scripts/restore.mjs` | 解密 / 校验 / 解包 |
+| `lib/scripts/syncd.mjs` | 同步执行体（plan/upload/download） |
+| `lib/ui.html` | 完整配置页（单文件） |
+| `test/fixtures/make-package.mjs` | 按 0.3.x 格式造包（加密） |
 
 ---
 
-## License
+## 12. 变更记录
 
-MIT © 2026 LYF
+### 0.4.0
+
+- **移除**打包 + 加密 + 上传链路（`/run`、`/cancel`、`build.mjs`、`sync.mjs`）：上传交给同步。
+- **新增**解码器：`/inspect` + `/restore` 接受任意本地路径或包目录，支持临时口令解别人分享的包。
+- 状态接口返回 `packages`（暂存目录扫到的包），页面「本地快照」改为「解码本地包」。
+- 配置瘦身：去掉 `remoteDir` / `keep` / `includeFeishuFiles` / `includeCredentials`。
+- 测试补齐：新增 `test/e2e.mjs` 与包生成 fixture（真实 AES-256-GCM，非 mock）。
+
+### 0.3.0
+
+- 新增逐目录镜像同步（上传增量 / 拉取镜像 / 预演 / 取消 / 多机锁）。
+- 同步不再依赖加密包，云端是原始目录树。
+
+### 0.2.x
+
+- 换机可移植性：`aliyunpan` 自动探测（含 PATH）、暂存目录自动创建、口令迁移接口 `/key`。
+- 修复 `profiles/<profile>/` 下的配置文件从未进包（`rel.length !== 3`）。
+- 凭据类根文件默认不进包（`.credentials.yaml` / `.npmrc` / `*.key|pem|p12|pfx`）。
+
+### 0.1.x
+
+- 首个版本：扫描 → 打包 → AES-256-GCM → 上传 → 回读校验 → 按份数剪枝；图标与设置卡片。
+
+---
+
+MIT License

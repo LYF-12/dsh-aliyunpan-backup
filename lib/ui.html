@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>阿里云盘备份 · DSH 插件</title>
+<title>阿里云盘同步 · DSH 插件</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -24,7 +24,7 @@
   .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
   .grow { flex: 1 1 220px; min-width: 0; }
   label.field { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
-  input[type=text], input[type=number], select { width: 100%; padding: 7px 9px; border-radius: 7px;
+  input[type=text], input[type=number], input[type=password], select { width: 100%; padding: 7px 9px; border-radius: 7px;
         border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; }
   button { padding: 7px 14px; border-radius: 7px; border: 1px solid var(--line);
            background: var(--card); color: var(--fg); font: inherit; cursor: pointer; }
@@ -40,11 +40,12 @@
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
   th { color: var(--muted); font-weight: 600; }
-  pre#log { margin: 0; padding: 12px; border-radius: 8px; background: #0d1117; color: #c9d1d9;
-            max-height: 320px; overflow: auto; font-size: 12px; line-height: 1.45; }
+  pre#log, pre#syncLog { margin: 0; padding: 12px; border-radius: 8px; background: #0d1117; color: #c9d1d9;
+            max-height: 300px; overflow: auto; font-size: 12px; line-height: 1.45; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
   .err { color: var(--bad); font-size: 13px; }
   .split { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .warnbox { border-left: 3px solid var(--warn); padding: 6px 10px; font-size: 12px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -53,15 +54,12 @@
   <div class="card">
     <div class="row" style="justify-content:space-between">
       <div>
-        <h1>阿里云盘备份</h1>
-        <div class="muted">把 DSH 配置 / 插件装配 / 会话 / 附件打包加密后同步到阿里云盘，并可一键校验或还原。</div>
+        <h1>阿里云盘同步</h1>
+        <div class="muted">按目录把 DSH 数据逐文件镜像到阿里云盘，多台机器共用同一份数据；另可直接解码别人分享或云端下载的加密包。</div>
       </div>
       <span class="badge"><span id="dot" class="dot"></span><span id="stateText">读取中…</span></span>
     </div>
     <div class="row" style="margin-top:14px">
-      <button id="btnRun" class="primary">立即备份并上传</button>
-      <button id="btnVerify">只打包校验（不上传）</button>
-      <button id="btnCancel">取消</button>
       <button id="btnRefresh">刷新</button>
       <span id="lastResult" class="muted"></span>
     </div>
@@ -69,49 +67,9 @@
   </div>
 
   <div class="card">
-    <h2>配置</h2>
-    <div class="split">
-      <label class="field">云端快照目录
-        <input type="text" id="remoteDir" placeholder="/DeepSeek Harness/DSH-Backup">
-      </label>
-      <label class="field">本地暂存目录（快照 + KEY.txt）
-        <input type="text" id="stagingDir" placeholder="D:\DSH-Backup">
-      </label>
-      <label class="field">保留云端份数（0 = 不清理）
-        <input type="number" id="keep" min="0" max="50" step="1">
-      </label>
-      <label class="field">aliyunpan 可执行文件
-        <input type="text" id="aliyunpanExe" placeholder="留空自动探测">
-      </label>
-      <label class="field">对应 DSH 目录
-        <input type="text" id="dshHome" placeholder="%USERPROFILE%\.dsh">
-      </label>
-      <label class="field">KEY 文件路径
-        <input type="text" id="keyFile" placeholder="留空 = 暂存目录/KEY.txt">
-      </label>
-      <label class="field">解包输出目录（点「解包」还原到这里）
-        <input type="text" id="restoreDir" placeholder="留空 = 暂存目录\restore\<快照名>">
-      </label>
-    </div>
-    <label class="row" style="margin-top:12px; gap:8px">
-      <input type="checkbox" id="includeFeishuFiles" style="width:auto">
-      <span>收录飞书收到的文件（feishu\files，约 +270MB；默认不收录）</span>
-    </label>
-    <label class="row" style="gap:8px">
-      <input type="checkbox" id="includeCredentials" style="width:auto">
-      <span>收录登录凭据（<code>.credentials.yaml</code> / <code>.npmrc</code>；默认不收录，换机后需重新登录）</span>
-    </label>
-    <div class="row" style="margin-top:14px">
-      <button id="btnSave" class="primary">保存配置</button>
-      <span id="saveHint" class="muted"></span>
-    </div>
-    <div class="hint">口令（KEY.txt）只存在本机；云端 payload.enc 没有口令无法解开。第一次运行会自动生成 24 位随机口令。</div>
-  </div>
-
-  <div class="card">
     <h2>同步（多机共享同一份数据）</h2>
     <div class="hint" style="margin:0 0 10px">
-      和上面的「加密快照」是两条路：同步不打包、不加密，按目录逐文件增量复制，云端能直接看到原始目录结构。
+      不打包、不加密，按目录逐文件增量复制，云端能直接看到原始目录结构。
       <strong>同一时间只在一台机器上同步</strong>：常用那台当「主机」上传，其它机器当「从机」拉取；
       拉取会写进本机 <code>.dsh</code>，建议先退出 DSH 再拉。
     </div>
@@ -132,7 +90,7 @@
         <input type="number" id="syncLockMinutes" min="0" max="1440" step="1">
       </label>
       <label class="field">下载暂存目录（aliyunpan 先下到这里）
-        <input type="text" id="syncDlDir" placeholder="留空 = 插件数据目录/sync-dl">
+        <input type="text" id="syncDlDir" placeholder="留空 = 插件数据目录\sync-dl">
       </label>
     </div>
     <label class="hint" style="display:block;margin-top:8px">
@@ -151,6 +109,39 @@
   </div>
 
   <div class="card">
+    <h2>解码本地包（旧版备份 / 别人分享）</h2>
+    <div class="hint" style="margin:0 0 10px">
+      手里有 <code>payload.enc</code>（或含它的文件夹）就能解。填路径 → 校验 → 解包，解出来的文件<strong>不会</strong>覆盖本机 <code>.dsh</code>，只落到你指定的目录里。
+    </div>
+    <label class="field">包路径（文件夹或 payload.enc）
+      <input type="text" id="pkgPath" class="mono" placeholder="D:\下载\payload.enc 或 D:\下载\20261026T1917-full">
+    </label>
+    <div class="row" style="margin-top:10px">
+      <button id="btnPkgInspect">检查这个包</button>
+      <button id="btnPkgVerify">校验完整性</button>
+      <button id="btnPkgExtract" class="primary">解包</button>
+      <span id="pkgHint" class="muted"></span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label class="field grow">解包输出目录
+        <input type="text" id="pkgOut" placeholder="留空 = 暂存目录\restore\<包名>">
+      </label>
+      <label class="field grow">口令（解别人的包时填）
+        <input type="password" id="pkgPass" placeholder="留空 = 用本机口令文件">
+      </label>
+    </div>
+    <div id="pkgInfo" class="hint"></div>
+    <div style="margin-top:14px">
+      <div class="hint" style="margin-bottom:6px">本地扫到的包（暂存目录里）</div>
+      <table>
+        <thead><tr><th>包</th><th>大小</th><th>时间</th><th></th></tr></thead>
+        <tbody id="pkgBody"><tr><td colspan="4" class="muted">读取中…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="warnbox">别人的包只要 <code>payload.enc</code> + 口令就够；<code>package.info.json</code> 只是给页面显示用的元数据。口令错会报 <code>AUTH FAIL at chunk 0</code>。</div>
+  </div>
+
+  <div class="card">
     <h2>口令（KEY.txt）</h2>
     <div class="row">
       <span id="keyState" class="muted">读取中…</span>
@@ -161,24 +152,41 @@
       <button id="btnKeyGen">生成新口令</button>
     </div>
     <div class="row" style="margin-top:10px">
-      <input type="text" id="keyInput" class="grow" placeholder="粘贴旧电脑的 KEY.txt 内容（或任意自定义口令，8–200 字符）">
+      <input type="text" id="keyInput" class="grow" placeholder="粘贴旧机器的 KEY.txt 内容（或任意自定义口令，8–200 字符）">
       <button id="btnKeySave" class="primary">使用此口令</button>
     </div>
-    <div class="hint">换电脑还原旧快照时，必须使用<strong>同一口令</strong>：口令只在本机 KEY.txt 里，云端包没有口令无法解开。请把口令另外存一份（密码管理器 / 离线记录），不要只存在这台机器上。</div>
+    <div class="hint">同步链路是明文、不用口令；这里的口令只用于<strong>解码加密包</strong>。要解用别的口令打的包，在解码卡片里单独填即可。</div>
     <div id="keyMsg" class="hint"></div>
   </div>
 
   <div class="card">
-    <h2>本地快照</h2>
-    <table>
-      <thead><tr><th>快照</th><th>大小</th><th>时间</th><th></th></tr></thead>
-      <tbody id="snapBody"><tr><td colspan="4" class="muted">读取中…</td></tr></tbody>
-    </table>
-    <div class="hint">换电脑时先用官方客户端或 CLI 把云端 <code>&lt;id&gt;/</code> 下载到本机暂存目录的 <code>snapshots\&lt;id&gt;\</code>，再点「校验」；若 <code>aliyunpan download</code> 报「下载文件失败 / 数据总量 0B」（备份盘或未开通三方权益包的账号会被平台拦），改用阿里云盘官方客户端下载，效果一样。</div>
+    <h2>路径配置</h2>
+    <div class="split">
+      <label class="field">对应 DSH 目录
+        <input type="text" id="dshHome" placeholder="%USERPROFILE%\.dsh">
+      </label>
+      <label class="field">暂存目录（解包工作区 + KEY.txt）
+        <input type="text" id="stagingDir" placeholder="留空 = 插件数据目录\staging">
+      </label>
+      <label class="field">KEY 文件路径
+        <input type="text" id="keyFile" placeholder="留空 = 暂存目录\KEY.txt">
+      </label>
+      <label class="field">解包默认输出目录
+        <input type="text" id="restoreDir" placeholder="留空 = 暂存目录\restore\<包名>">
+      </label>
+      <label class="field">aliyunpan 可执行文件
+        <input type="text" id="aliyunpanExe" placeholder="留空自动探测（含 PATH）">
+      </label>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button id="btnSave" class="primary">保存配置</button>
+      <span id="saveHint" class="muted"></span>
+    </div>
+    <div id="paths" class="hint"></div>
   </div>
 
   <div class="card">
-    <h2>运行日志</h2>
+    <h2>解码日志</h2>
     <pre id="log">（暂无）</pre>
     <div class="hint" id="logPath"></div>
   </div>
@@ -194,19 +202,7 @@ const fmtBytes = (n) => {
 };
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString() : '-');
 let timer = null;
-
-function setState(s) {
-  const running = s && s.running;
-  const job = s && s.job;
-  $('dot').className = 'dot ' + (running ? 'run' : job && job.phase === 'done' ? 'ok' : job && job.phase === 'failed' ? 'bad' : '');
-  $('stateText').textContent = running ? '正在运行 · ' + (job && job.mode) : job ? (job.phase === 'done' ? '空闲 · 上次成功' : '空闲 · 上次失败') : '空闲';
-  $('btnRun').disabled = !!running;
-  $('btnVerify').disabled = !!running;
-  $('btnCancel').disabled = !running;
-  if (job) {
-    $('lastResult').textContent = (job.finishedAt ? fmtTime(job.finishedAt) + ' · ' : '') + (job.result || '').slice(0, 120);
-  }
-}
+let syncTimer = null;
 
 async function api(path, init) {
   const res = await fetch(BASE + path, Object.assign({ headers: { 'content-type': 'application/json' } }, init || {}));
@@ -215,37 +211,50 @@ async function api(path, init) {
   return body;
 }
 
-function fillConfig(cfg) {
-  $('remoteDir').value = cfg.remoteDir || '';
-  $('stagingDir').value = cfg.stagingDir || '';
-  $('keep').value = cfg.keep;
-  $('aliyunpanExe').value = cfg.aliyunpanExe || '';
-  $('dshHome').value = cfg.dshHome || '';
-  $('keyFile').value = cfg.keyFile || '';
-  $('restoreDir').value = cfg.restoreDir || '';
-  $('includeFeishuFiles').checked = cfg.includeFeishuFiles === true;
-  $('includeCredentials').checked = cfg.includeCredentials === true;
+function setState(s) {
+  const running = s && s.running;
+  const job = s && s.job;
+  const phase = job && job.phase;
+  $('dot').className = 'dot ' + (running ? 'run' : phase === 'done' ? 'ok' : phase === 'failed' ? 'bad' : '');
+  $('stateText').textContent = running ? '正在解码 · ' + (job && job.mode) : job ? (phase === 'done' ? '空闲 · 上次成功' : phase === 'failed' ? '空闲 · 上次失败' : '空闲') : '空闲';
+  if (job) {
+    $('lastResult').textContent = (job.finishedAt ? fmtTime(job.finishedAt) + ' · ' : '') + (job.result || '').slice(0, 140);
+  }
 }
 
-function renderSnapshots(list) {
-  const body = $('snapBody');
+function fillConfig(view) {
+  $('dshHome').value = view.dshHome || '';
+  $('stagingDir').value = view.stagingDir || '';
+  $('keyFile').value = view.keyFile || '';
+  $('restoreDir').value = view.restoreDir || '';
+  $('aliyunpanExe').value = view.aliyunpanExe || '';
+  $('paths').textContent = '暂存 ' + (view.stagingDir || '-') + ' · KEY ' + (view.keyFile || '-') + ' · aliyunpan ' + (view.aliyunpanExe || '未找到');
+}
+
+function renderPackages(list) {
+  const body = $('pkgBody');
   if (!list || !list.length) {
-    body.innerHTML = '<tr><td colspan="4" class="muted">还没有本地快照</td></tr>';
+    body.innerHTML = '<tr><td colspan="4" class="muted">暂存目录里还没有包；直接把路径填到上面输入框也行</td></tr>';
     return;
   }
   body.innerHTML = '';
-  for (const s of list) {
+  for (const p of list) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td class="mono">' + s.id + '</td><td>' + fmtBytes(s.bytes) + '</td><td class="muted">' + fmtTime(s.mtime) + '</td><td></td>';
+    const files = p.info && p.info.fileCount ? (' · ' + p.info.fileCount + ' 文件') : '';
+    tr.innerHTML = '<td class="mono">' + p.id + files + '</td><td>' + fmtBytes(p.bytes) + '</td><td class="muted">' + fmtTime(p.mtime) + '</td><td></td>';
     const cell = tr.lastElementChild;
+    const use = document.createElement('button');
+    use.textContent = '选中';
+    use.onclick = () => { $('pkgPath').value = p.path; inspect(); };
     const v = document.createElement('button');
     v.textContent = '校验';
-    v.onclick = () => restore(s.id, true);
+    v.style.marginLeft = '6px';
+    v.onclick = () => { $('pkgPath').value = p.path; restore(true); };
     const e = document.createElement('button');
     e.textContent = '解包';
     e.style.marginLeft = '6px';
-    e.onclick = () => restore(s.id, false);
-    cell.append(v, e);
+    e.onclick = () => { $('pkgPath').value = p.path; restore(false); };
+    cell.append(use, v, e);
     body.appendChild(tr);
   }
 }
@@ -254,8 +263,8 @@ async function refresh() {
   try {
     const data = await api('/status');
     setState(data.state);
-    fillConfig(data.view);
-    renderSnapshots(data.snapshots);
+    fillConfig(data.view || {});
+    renderPackages(data.packages || data.snapshots || []);
     $('log').textContent = (data.log && data.log.text) || '（暂无）';
     $('logPath').textContent = data.log && data.log.path ? '日志文件：' + data.log.path : '';
     $('err').textContent = '';
@@ -268,35 +277,44 @@ async function refresh() {
   }
 }
 
-async function run(mode) {
+async function inspect() {
+  const pkg = $('pkgPath').value.trim();
+  if (!pkg) { $('pkgInfo').textContent = '请先填包路径'; return; }
   try {
-    await api('/run', { method: 'POST', body: JSON.stringify({ mode }) });
-    refresh();
-  } catch (error) { $('err').textContent = String(error.message || error); }
+    const r = await api('/inspect?pkg=' + encodeURIComponent(pkg));
+    if (!r.found) { $('pkgInfo').textContent = '没找到 payload.enc：' + (r.path || pkg); return; }
+    const info = r.info || {};
+    $('pkgInfo').textContent = '找到了：' + r.path + ' · ' + fmtBytes(r.bytes) + ' · ' + fmtTime(r.mtime) +
+      (info.createdAt ? ' · 打包于 ' + fmtTime(info.createdAt) : '') +
+      (info.fileCount ? ' · ' + info.fileCount + ' 个文件 / ' + fmtBytes(info.totalBytes) : '');
+  } catch (error) { $('pkgInfo').textContent = String(error.message || error); }
 }
 
-async function restore(snapshot, verifyOnly) {
+async function restore(verifyOnly) {
+  const pkg = $('pkgPath').value.trim();
+  if (!pkg) { $('pkgHint').textContent = '请先填包路径'; return; }
   try {
-    const body = await api('/restore', { method: 'POST', body: JSON.stringify({ snapshot, verifyOnly }) });
-    $('lastResult').textContent = verifyOnly ? ('校验中：' + snapshot) : ('解包中 → ' + ((body && body.outDir) || '(默认目录)'));
+    const body = await api('/restore', { method: 'POST', body: JSON.stringify({
+      pkg,
+      verifyOnly,
+      out: $('pkgOut').value.trim(),
+      passphrase: $('pkgPass').value,
+    }) });
+    $('pkgHint').textContent = verifyOnly ? '校验中…' : ('解包中 → ' + (body.outDir || '(默认目录)'));
     refresh();
-  } catch (error) { $('err').textContent = String(error.message || error); }
+  } catch (error) { $('pkgHint').textContent = String(error.message || error); }
 }
 
 function fmtKey(k) {
   if (!k) return '';
-  if (!k.exists) return '还没有口令文件（第一次备份会自动生成 24 位随机口令）';
+  if (!k.exists) return '还没有口令文件（解别人的包可以在解码卡片里直接填口令）';
   if (!k.usable) return '口令太短（' + k.length + ' 字符），请重新设置';
   return '已就绪 · ' + k.length + ' 字符 · ' + k.masked + ' · ' + k.keyFile;
 }
 
 async function loadKey() {
-  try {
-    const k = await api('/key');
-    $('keyState').textContent = fmtKey(k);
-  } catch (error) {
-    $('keyState').textContent = String(error.message || error);
-  }
+  try { $('keyState').textContent = fmtKey(await api('/key')); }
+  catch (error) { $('keyState').textContent = String(error.message || error); }
 }
 
 async function revealKey() {
@@ -326,7 +344,7 @@ async function saveKey() {
   try {
     await api('/key', { method: 'POST', body: JSON.stringify({ passphrase: pass }) });
     $('keyInput').value = '';
-    $('keyMsg').textContent = '口令已写入，旧快照现在可以解包了';
+    $('keyMsg').textContent = '口令已写入';
     loadKey();
   } catch (error) { $('keyMsg').textContent = String(error.message || error); }
 }
@@ -334,7 +352,7 @@ async function saveKey() {
 async function genKey() {
   try {
     const k = await api('/key', { method: 'POST', body: JSON.stringify({ generate: true }) });
-    $('keyMsg').textContent = '新口令：' + k.key + ' —— 记下来，之后无法再显示（旧快照将解不开）';
+    $('keyMsg').textContent = '新口令：' + k.key + ' —— 记下来，之后无法再显示';
     loadKey();
   } catch (error) { $('keyMsg').textContent = String(error.message || error); }
 }
@@ -342,15 +360,11 @@ async function genKey() {
 async function save() {
   try {
     await api('/config', { method: 'POST', body: JSON.stringify({
-      remoteDir: $('remoteDir').value.trim(),
-      stagingDir: $('stagingDir').value.trim(),
-      keep: Number($('keep').value),
-      aliyunpanExe: $('aliyunpanExe').value.trim(),
       dshHome: $('dshHome').value.trim(),
+      stagingDir: $('stagingDir').value.trim(),
       keyFile: $('keyFile').value.trim(),
       restoreDir: $('restoreDir').value.trim(),
-      includeFeishuFiles: $('includeFeishuFiles').checked,
-      includeCredentials: $('includeCredentials').checked,
+      aliyunpanExe: $('aliyunpanExe').value.trim(),
     }) });
     $('saveHint').textContent = '已保存 ' + new Date().toLocaleTimeString();
     refresh();
@@ -370,7 +384,6 @@ const SYNC_DIR_LABEL = {
   backups: '备份',
   'dsh-usage': '用量统计',
 };
-let syncTimer = null;
 
 function renderSyncDirs(data) {
   const chosen = new Set((data.dirs || []).map((d) => d.name));
@@ -428,11 +441,8 @@ function fillSync(data) {
 }
 
 async function refreshSync() {
-  try {
-    fillSync(await api('/sync'));
-  } catch (error) {
-    $('syncTable').textContent = String(error.message || error);
-  }
+  try { fillSync(await api('/sync')); }
+  catch (error) { $('syncTable').textContent = String(error.message || error); }
 }
 
 async function planSyncRun() {
@@ -481,27 +491,22 @@ async function saveSyncQuiet() {
   }
 }
 
-$('btnSyncPlan').onclick = planSyncRun;
-$('btnSyncRun').onclick = runSync;
-$('btnSyncSave').onclick = saveSyncQuiet;
-$('btnSyncCancel').onclick = async () => {
-  try {
-    await api('/sync/cancel', { method: 'POST' });
-    refreshSync();
-  } catch (error) {
-    $('syncHint').textContent = String(error.message || error);
-  }
-};
-
-$('btnRun').onclick = () => run('upload');
-$('btnVerify').onclick = () => run('verify');
-$('btnCancel').onclick = async () => { try { await api('/cancel', { method: 'POST' }); refresh(); } catch (e) { $('err').textContent = String(e.message || e); } };
 $('btnRefresh').onclick = refresh;
 $('btnSave').onclick = save;
+$('btnPkgInspect').onclick = inspect;
+$('btnPkgVerify').onclick = () => restore(true);
+$('btnPkgExtract').onclick = () => restore(false);
 $('btnKeyReveal').onclick = revealKey;
 $('btnKeyCopy').onclick = copyKey;
 $('btnKeyGen').onclick = genKey;
 $('btnKeySave').onclick = saveKey;
+$('btnSyncPlan').onclick = planSyncRun;
+$('btnSyncRun').onclick = runSync;
+$('btnSyncSave').onclick = saveSyncQuiet;
+$('btnSyncCancel').onclick = async () => {
+  try { await api('/sync/cancel', { method: 'POST' }); refreshSync(); }
+  catch (error) { $('syncHint').textContent = String(error.message || error); }
+};
 loadKey();
 refresh();
 refreshSync();
