@@ -1,6 +1,6 @@
 {
   "name": "dsh-aliyunpan-backup",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "DSH 云同步插件：把 .dsh 里选定的目录（会话/附件/素材/索引）和装配文件（模型配置/插件清单）增量镜像到阿里云盘，一主多从；随时拉回另一台机器的改动。附带本地包解码器，可校验/解包任意 payload.enc（含别人分享的）。设置→插件里有带图标的配置界面，路径可用系统选择框。",
   "type": "module",
   "engines": {

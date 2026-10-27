@@ -328,6 +328,12 @@ node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口�
 
 ## 12. 变更记录
 
+### 0.4.3
+
+- **修界面挤不下**：设置页里配置卡右侧被裁掉、出现横向滚动条。原因是 CSS 网格的隐式列按 `max-content` 撑开，一行超长内容（aliyunpan 日志、云端长路径、同步预演表格的「云端位置」）就把整页推宽。四处收口：`.wrap` 改 `grid-template-columns: minmax(0, 1fr)`、卡片加 `min-width: 0`、日志 `pre` 改 `white-space: pre-wrap` + `overflow-wrap: anywhere`（原来只能横向拖）、表格改 `table-layout: fixed` 并允许单元格断词。
+- 内嵌配置页 iframe 不再固定 680px：宽度 100%、高度 `clamp(420px, 70vh, 780px)`，窄侧栏里不会出双滚动条；配置卡也加了 `min-width: 0` 与长文本断行。
+- 验证：Edge headless + CDP 在 980/900/760/640/520 五个宽度量 `document.scrollWidth`，注入超长日志与长路径后旧版溢出 649–1129px（`.wrap` 撑到 1592px），新版五个宽度全部 0 溢出。
+
 ### 0.4.2
 
 - **装配文件也能同步了**：新增文件级同步项 —— 模型与插件装配（`cordis.patch.yml`）、插件清单（`package.json` + 锁文件）、登录凭据（`.credentials.yaml`，默认不勾）。回答「模型信息和 key 为什么没同步」：Key 不随模型配置走，要单独勾且是明文上云。

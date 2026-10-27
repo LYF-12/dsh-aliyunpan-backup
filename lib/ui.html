@@ -15,12 +15,17 @@
             --accent: #6f9dff; --ok: #4ec98a; --bad: #ff7b72; --warn: #f0b429; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 20px; background: var(--bg); color: var(--fg);
-         font: 14px/1.55 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; }
+  body { margin: 0; padding: clamp(10px, 2vw, 20px); background: var(--bg); color: var(--fg);
+         font: 14px/1.55 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+         overflow-x: hidden; }
   h1 { font-size: 18px; margin: 0 0 4px; }
   h2 { font-size: 14px; margin: 0 0 12px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
-  .wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 14px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  /* minmax(0,1fr)：不加这条，网格隐式列按 max-content 撑开，一行超长日志就把整页推宽、右侧被裁 */
+  .wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 14px;
+          grid-template-columns: minmax(0, 1fr); min-width: 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+          min-width: 0; overflow-wrap: anywhere; }
+  .card > * { min-width: 0; }
   .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
   .grow { flex: 1 1 220px; min-width: 0; }
   label.field { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
@@ -37,11 +42,13 @@
   .dot.run { background: var(--warn); } .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
   .muted { color: var(--muted); }
   .mono { font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line);
+           overflow-wrap: anywhere; word-break: break-word; }
   th { color: var(--muted); font-weight: 600; }
   pre#log, pre#syncLog, pre#envLog { margin: 0; padding: 12px; border-radius: 8px; background: #0d1117; color: #c9d1d9;
-            max-height: 300px; overflow: auto; font-size: 12px; line-height: 1.45; }
+            max-height: 300px; overflow: auto; font-size: 12px; line-height: 1.45;
+            white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; max-width: 100%; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
   .err { color: var(--bad); font-size: 13px; }
   .split { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
