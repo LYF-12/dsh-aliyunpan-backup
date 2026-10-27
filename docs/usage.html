@@ -86,6 +86,7 @@ svg{max-width:100%;height:auto;display:block;margin:0 auto}
     <li><a href="#s5">另一台电脑怎么用</a></li>
     <li><a href="#s6">解码加密包</a></li>
     <li><a href="#s7">多机与换机注意</a></li>
+    <li><a href="#s7u">更新插件</a></li>
     <li><a href="#s8">配置与命令速查</a></li>
     <li><a href="#s9">常见问题</a></li>
     <li><a href="#s10">路径总览</a></li>
@@ -97,7 +98,7 @@ svg{max-width:100%;height:auto;display:block;margin:0 auto}
 <header class="hero">
   <h1>DSH 云同步 · 使用说明</h1>
   <p>把 DeepSeek Harness 的会话、附件、工作区索引、任务板，逐目录增量镜像到阿里云盘；换台电脑拉回来就能接着用。</p>
-  <div class="tags"><span>插件版本 0.4.4</span><span>同步主链路</span><span>附带包解码器</span><span>一主多从</span></div>
+  <div class="tags"><span>插件版本 0.5.0</span><span>同步主链路</span><span>插件内更新</span><span>附带包解码器</span><span>一主多从</span></div>
 </header>
 
 <section id="s1">
@@ -182,7 +183,7 @@ aliyunpan ls "/"       <span class="c"># 能列目录就算通了</span></code><
     <span class="node">刷新</span><span class="arrow">·</span>
     <span class="node">打开完整配置页</span>
   </div>
-  <p>完整配置页里七张卡：<b>运行环境</b>、<b>同步</b>、<b>解码本地包</b>、<b>口令</b>、<b>路径配置</b>、<b>解码日志</b>。第一次用建议先开完整配置页做设置。</p>
+  <p>完整配置页里八张卡：<b>运行环境</b>、<b>插件更新</b>、<b>同步</b>、<b>解码本地包</b>、<b>口令</b>、<b>路径配置</b>、<b>解码日志</b>。第一次用建议先开完整配置页做设置。</p>
   <p>卡片上的状态徽标只反映<b>同步</b>这条链路：<code>未同步</code> → <code>同步中</code> → <code>已上传</code> / <code>已拉取</code>。<b>看到「未同步」不等于插件坏了</b>，点一次「同步上传」就开始。缺 CLI 时徽标是「缺 aliyunpan」，右侧会多一个「下载 aliyunpan」。</p>
   <div class="ok"><b>路径不用手打</b>配置页里每个路径框右边都有「浏览…」，点开是 Windows 原生选择框，选完自动回填。也可以继续手填。</div>
 </section>
@@ -308,6 +309,21 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "&lt;云端路径&gt;"
   <div class="danger"><b>不要对同一份数据同时开同步与旧备份上传</b>旧版 0.3.x 的打包链路已移除；如仍有旧客户端在跑，注意它们不共享索引，会互相覆盖文件。</div>
 </section>
 
+<section id="s7u">
+  <h2><span class="n">7+</span>更新插件</h2>
+  <p class="lead">插件自己会看有没有新版本，点一下就更新，不用再去命令行或插件市场。</p>
+
+  <div class="flow">
+    <div class="step"><h4>有新版本时</h4><p>设置 → 插件 → 本插件卡片的按钮行会多一个「<b>更新插件到 0.5.0</b>」。点它：查上游版本 → 下载源码包 → 解压 → 整目录替换。旧目录先改名成 <code>xxx.old-时间戳</code>，失败自动换回来。</p></div>
+    <div class="step"><h4>更新完要重启 DSH</h4><p>卡片会显示「已更新到 x，重启 DSH 生效」。宿主那半边的代码已经在内存里了，不重启还是旧逻辑。重启前别正在同步，会掐断。</p></div>
+    <div class="step"><h4>没有新版本时</h4><p>按钮是「检查插件更新」，点了就是重新查一次上游。</p></div>
+  </div>
+
+  <p>完整配置页的「<b>插件更新</b>」卡能看到：当前版本、磁盘上的版本、上游版本、安装位置（多个 profile 会列出哪个正在用）、实时更新日志。下载走「官方直连 → <code>ghfast.top</code> → <code>gh-proxy.com</code>」+ 每源 2 次重试，和装 aliyunpan 用的是同一套下载器。</p>
+  <div class="ok"><b>两种安装方式都能更新</b>：<code>github:</code> 装的是真实目录 → 整目录替换；<code>link:</code> 指向 git 工作副本 → 改走 <code>git pull --ff-only</code>（目录里没有 <code>.git</code> 会提示你手动拉）。</div>
+  <p class="note">为什么不用 pnpm 重装：那要求目标机器上有 pnpm、会改 profile 的锁文件、还会往全局 store 写 hardlink。本包零运行时依赖，换一份文件与重装等价。</p>
+</section>
+
 <section id="s8">
   <h2><span class="n">8</span>配置与命令速查</h2>
 
@@ -401,7 +417,7 @@ node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --ou
     <tr><td>云端同步根</td><td><code>/DeepSeek Harness/DSH-Sync</code></td></tr>
     <tr><td>云端旧包目录</td><td><code>/DeepSeek Harness/DSH-Backup</code></td></tr>
   </table>
-  <p class="foot">插件版本 0.4.4 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
+  <p class="foot">插件版本 0.5.0 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
 </section>
 
 </main>

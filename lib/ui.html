@@ -46,7 +46,7 @@
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line);
            overflow-wrap: anywhere; word-break: break-word; }
   th { color: var(--muted); font-weight: 600; }
-  pre#log, pre#syncLog, pre#envLog { margin: 0; padding: 12px; border-radius: 8px; background: #0d1117; color: #c9d1d9;
+  pre#log, pre#syncLog, pre#envLog, pre#updLog { margin: 0; padding: 12px; border-radius: 8px; background: #0d1117; color: #c9d1d9;
             max-height: 300px; overflow: auto; font-size: 12px; line-height: 1.45;
             white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; max-width: 100%; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
@@ -101,6 +101,22 @@
     </details>
     <pre id="envLog" style="margin-top:10px">（暂无）</pre>
     <div class="hint">自举安装只做三件事：下载官方发布包 → 解压到插件数据目录 <code>tools\</code> → 跑一次 <code>--version</code> 确认能启动，然后把路径写进配置。不装服务、不写注册表、不需要管理员权限。</div>
+  </div>
+
+  <div class="card">
+    <h2>插件更新</h2>
+    <div class="row" style="justify-content:space-between">
+      <span id="updState" class="badge"><span id="updDot" class="dot"></span><span id="updText">检查中…</span></span>
+      <span id="updVer" class="mono muted"></span>
+    </div>
+    <div id="updInstall" class="hint"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnUpdCheck">检查更新</button>
+      <button id="btnUpdRun" class="primary">下载并更新</button>
+      <span id="updHint" class="muted"></span>
+    </div>
+    <div class="hint">更新只下载新版本源码包覆盖安装目录（官方直连失败自动试镜像），<strong>重启 DSH 后生效</strong>；<code>link:</code> 安装走 <code>git pull --ff-only</code>。旧目录会先改名成 <code>xxx.old-时间戳</code>，替换失败自动换回来。</div>
+    <pre id="updLog" style="margin-top:10px">（暂无）</pre>
   </div>
 
   <div class="card">
@@ -672,6 +688,72 @@ async function installEnvLocal() {
   }
 }
 
+// ---- 插件自更新 ----
+let updTimer = null;
+
+function fillUpdate(data) {
+  const running = data.running === true;
+  const behind = data.behind === true;
+  const pending = data.pendingRestart === true;
+  const installed = data.installed || '';
+  const current = data.current || '';
+  $('updDot').className = 'dot ' + (running ? 'run' : behind ? 'bad' : pending ? 'run' : data.error && !data.checkedAt ? 'bad' : 'ok');
+  $('updText').textContent = running
+    ? '正在更新 · ' + (data.phase || '')
+    : behind
+      ? '有新版本'
+      : pending
+        ? '已更新 · 待重启'
+        : data.error && !data.checkedAt
+          ? '检查失败'
+          : '已是最新';
+  $('updVer').textContent = '当前 ' + (current || '?') +
+    (installed && installed !== current ? ' · 磁盘上 ' + installed : '') +
+    (data.latest ? ' · 最新 ' + data.latest : '');
+  const list = (data.installs || []).map((i) => i.profile + '（' + i.kind + (i.version ? ' ' + i.version : '') + (i.active ? ' · 正在用' : '') + '）').join('、');
+  $('updInstall').textContent = list ? '安装位置：' + list : '没找到装了本插件的 profile；用命令行更新：dsh plugin --profile <名字> add github:你的仓库';
+  $('updLog').textContent = (data.log && data.log.length ? data.log.join('\n') : '（暂无）');
+  $('btnUpdRun').disabled = running;
+  $('btnUpdCheck').disabled = running || data.checking === true;
+  if (data.error) $('updHint').textContent = '失败：' + data.error;
+  else if (running) $('updHint').textContent = '下载并替换中，请稍候…';
+  else if (pending) $('updHint').textContent = '已更新到 ' + (installed || '') + '，重启 DSH 后生效';
+  else if (behind) $('updHint').textContent = '可以更新：点「下载并更新」';
+  else if (data.checkedAt) $('updHint').textContent = data.latestSource ? '版本来源 ' + data.latestSource : '';
+  else $('updHint').textContent = '';
+  if (running) {
+    if (updTimer) clearTimeout(updTimer);
+    updTimer = setTimeout(refreshUpdate, 1500);
+  }
+}
+
+async function refreshUpdate(check) {
+  try {
+    const data = await api('/update' + (check ? '?check=1' : ''));
+    fillUpdate(data);
+    return data;
+  } catch (error) {
+    $('updText').textContent = '检查失败';
+    $('updHint').textContent = String(error.message || error);
+    return null;
+  }
+}
+
+async function runPluginUpdate() {
+  $('btnUpdRun').disabled = true;
+  $('updHint').textContent = '开始更新…';
+  try {
+    await api('/update/run', { method: 'POST', body: '{}' });
+    refreshUpdate();
+  } catch (error) {
+    $('btnUpdRun').disabled = false;
+    $('updHint').textContent = String(error.message || error);
+  }
+}
+
+$('btnUpdCheck').onclick = () => refreshUpdate(true);
+$('btnUpdRun').onclick = runPluginUpdate;
+
 $('btnEnvInstall').onclick = installEnv;
 $('btnEnvLocal').onclick = installEnvLocal;
 $('btnEnvOpen').onclick = async () => {
@@ -730,6 +812,7 @@ loadKey();
 refresh();
 refreshSync();
 refreshEnv();
+refreshUpdate();
 </script>
 </body>
 </html>

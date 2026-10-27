@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 
 const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-ab-'));
 process.env.DSH_AB_HOME = tmpHome;
+process.env.DSH_AB_NO_UPDATE_CHECK = '1'; // 自更新检查会打网络，测试里关掉
 
 const routes = new Map();
 const effectLabels = [];
@@ -278,6 +279,21 @@ for (const [key, wanted] of Object.entries(expect)) {
 }
 assert.equal(pickAsset(assetList, 'aix', 'ppc'), null, 'unsupported platform -> null');
 assert.equal(pickAsset([], 'win32', 'x64'), null, 'empty asset list -> null');
+
+// ---- 插件自更新 ----
+assert.ok(routes.has(base + '/update'), 'update status route');
+assert.ok(routes.has(base + '/update/run'), 'update run route');
+const updGet = await call(base + '/update');
+assert.equal(updGet.status, 200, 'GET /update');
+assert.equal(typeof updGet.json.current, 'string', 'current version exposed');
+assert.match(updGet.json.current, /^[0-9]+[.][0-9]+[.][0-9]+/, 'current version looks like semver: ' + updGet.json.current);
+assert.equal(updGet.json.running, false, 'update idle');
+assert.ok(Array.isArray(updGet.json.installs), 'installs array');
+assert.ok(Array.isArray(updGet.json.log), 'update log array');
+const updStatus = await call(base + '/status');
+assert.equal(typeof updStatus.json.update.current, 'string', '/status exposes update summary');
+const updBad = await call(base + '/update/run', { method: 'GET' });
+assert.equal(updBad.status, 405, '/update/run only accepts POST');
 
 const badRestore = await call(base + '/restore', { method: 'POST', body: { pkg: '/definitely/not/here' } });
 assert.equal(badRestore.status, 409, 'restore without a real package -> 409');

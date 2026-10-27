@@ -77,6 +77,31 @@ dsh plugin --profile desktop add link:D:\Code\deepseek\cs\dsh-aliyunpan-backup
 
 装完**重启 DSH**，打开 设置 → 插件，找到本插件即可。
 
+### 2.3 更新插件（0.5.0 起，插件内一键）
+
+卡片的按钮行会有「**更新插件到 x.y.z**」（有新版本时）或「检查插件更新」（已最新时）；完整配置页里还有一张「插件更新」卡，能看当前版本、磁盘上的版本、上游版本、安装位置和更新日志。
+
+点一下会发生什么：
+
+1. 查上游最新版本：GitHub API → `raw.githubusercontent.com` → 镜像 `ghfast.top` → 镜像 `gh-proxy.com`，四级兜底，每级都记日志。
+2. 下载 `https://github.com/<repo>/archive/refs/heads/main.tar.gz`（同样走「官方直连 → 镜像」+ 每源 2 次重试，复用 §2.1 的下载器）。
+3. 解压到临时目录 → 找到含 `package.json`（`name` 是本包）的那一层 → 拷到 `<work>/next`，把旧的 `node_modules` 一起搬进去。
+4. 旧目录改名成 `<包目录>.old-<时间戳>`，`next` 替换上去；**任何一步失败都自动换回旧目录**，`.old-` 目录在成功后保留，确认没问题可手动删。
+5. **重启 DSH 生效**：宿主半侧代码（路由、服务）已经加载进内存，不重启还是旧逻辑。界面会显示「已更新到 x，重启 DSH 生效」。
+
+两种安装方式都能更新：
+
+- `github:LYF-12/dsh-aliyunpan-backup`（profile 的 `node_modules` 里是一份真实目录）→ 走上面的整目录替换。
+- `link:D:\Code\deepseek\cs\dsh-aliyunpan-backup`（指向 git 工作副本）→ 改走 `git pull --ff-only`；目录里没有 `.git` 时会给一句可读提示让你手动拉。
+
+也可以完全不用界面：
+
+```powershell
+dsh plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup   # 等同于装最新版
+```
+
+> 为什么不用 pnpm 重装：那要求目标机器上有 pnpm、会动 profile 的锁文件、还会往全局 store 写 hardlink。本包零运行时依赖，所以「换一份文件」和「重装」在结果上等价，副作用更小。
+
 ---
 
 ## 3. 界面
@@ -90,8 +115,9 @@ dsh plugin --profile desktop add link:D:\Code\deepseek\cs\dsh-aliyunpan-backup
 | 刷新 | 重新读状态/日志 |
 | 打开完整配置页 / 复制配置页地址 | 卡片里内嵌完整页面；宿主拦弹窗时用复制地址 |
 | 下载 aliyunpan | **只在找不到 exe 时出现**，一键自举安装（见 §2.1） |
+| 更新插件到 x / 检查插件更新 | 有新版本时显示前者，点一下自更新（见 §2.3）；更新后需重启 DSH |
 
-完整配置页（`/api/dsh-aliyunpan-backup/ui`）七张卡：运行环境、同步、解码本地包、口令、路径配置、解码日志；「运行环境」卡显示 aliyunpan 是否就绪、版本、安装路径、安装进度日志，以及自定义下载地址。
+完整配置页（`/api/dsh-aliyunpan-backup/ui`）八张卡：运行环境、插件更新、同步、解码本地包、口令、路径配置、解码日志；「运行环境」卡显示 aliyunpan 是否就绪、版本、安装路径、安装进度日志，以及自定义下载地址。
 
 所有路径输入框旁边都有按钮：
 
@@ -256,7 +282,7 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 
 ---
 
-## 8. HTTP 路由（14 条，全部 exact + 仅 loopback）
+## 8. HTTP 路由（16 条，全部 exact + 仅 loopback）
 
 | 路由 | 方法 | 说明 |
 | --- | --- | --- |
@@ -274,6 +300,8 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 | `/provision` | GET | aliyunpan 运行环境 + 安装状态与日志 |
 | `/provision/run` | POST | 自举安装（`{url}` 覆盖下载地址、`{tag}` 指定版本、`{local}` 用本地 zip/目录安装） |
 | `/pick` | POST | 弹系统选择框：`{kind, initial, title}`（kind = `dir` 或 `file`）→ `{ok, path}`；取消/超时 409 |
+| `/update` | GET | 自更新状态；`?check=1` 会去查一次上游（不传时首次访问也会顺手查一次） |
+| `/update/run` | POST | 开始更新，`{profile}` 可选；已在更新时 409 |
 
 ---
 
@@ -335,6 +363,14 @@ node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口�
 ---
 
 ## 12. 变更记录
+
+### 0.5.0
+
+- **插件内自带更新按钮**（用户提的「插件里面要有更新按钮」）：不用再去命令行或插件市场，卡片上直接「更新插件到 x.y.z」，完整配置页多了「插件更新」卡（当前版本 / 磁盘版本 / 上游版本 / 安装位置 / 实时日志）。
+- 更新实现不依赖 pnpm：下载 GitHub 源码 tarball → 解压 → 整目录原子替换（旧目录先改名 `.old-<时间戳>`，失败自动回滚），下载复用 0.4.4 的「官方直连 → ghfast.top → gh-proxy.com」+ 每源 2 次重试；`link:` 安装改走 `git pull --ff-only`。
+- 版本查询四级兜底：GitHub API（`contents` + raw accept）→ `raw.githubusercontent.com` → 两个镜像；全挂时给出逐条失败原因，不会假装「已是最新」。
+- 更新完成后明确提示「重启 DSH 生效」，不做自动重启（重启会掐掉正在跑的同步）。
+- 路由 14 → 16（`/update`、`/update/run`）；测试环境变量 `DSH_AB_NO_UPDATE_CHECK=1` 可关掉首次自动检查（smoke 用它避免打网络）。
 
 ### 0.4.4
 
