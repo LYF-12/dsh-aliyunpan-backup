@@ -170,6 +170,82 @@ assert.equal(badSync.status, 400, 'bad sync mode rejected');
 const nothingToCancel = await call(base + '/sync/cancel', { method: 'POST' });
 assert.equal(nothingToCancel.json.ok, false, 'cancel without running sync');
 
+// ---- 自举安装（aliyunpan）----
+assert.ok(routes.has(base + '/provision'), 'provision status route');
+assert.ok(routes.has(base + '/provision/run'), 'provision run route');
+
+const provStatus = await call(base + '/provision');
+assert.equal(provStatus.status, 200, 'GET /provision status');
+assert.equal(typeof provStatus.json.installed, 'boolean', 'installed flag');
+assert.equal(typeof provStatus.json.supported, 'boolean', 'supported flag');
+assert.ok(provStatus.json.target.split(/[\\/]/).includes('tools'), 'install target lives under tools/: ' + provStatus.json.target);
+assert.equal(provStatus.json.running, false, 'provision idle');
+assert.ok(Array.isArray(provStatus.json.log), 'provision log array');
+
+const statusWithEnv = await call(base + '/status');
+assert.equal(typeof statusWithEnv.json.env.installed, 'boolean', '/status exposes env.installed');
+assert.equal(statusWithEnv.json.provision.running, false, '/status exposes provision summary');
+
+const badScheme = await call(base + '/provision/run', { method: 'POST', body: { url: 'ftp://example.test/x.zip' } });
+assert.equal(badScheme.status, 409, 'non-http url rejected');
+assert.match(badScheme.json.error, /http\(s\)/);
+
+// 连不上的地址：应当很快进入 failed，而不是把进程挂住
+const failing = await call(base + '/provision/run', { method: 'POST', body: { url: 'http://127.0.0.1:1/aliyunpan.zip' } });
+assert.equal(failing.status, 200, 'failing download still starts a job');
+let provSettled = null;
+for (let i = 0; i < 40; i++) {
+  const state = await call(base + '/provision');
+  if (!state.json.running) {
+    provSettled = state.json;
+    break;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 250));
+}
+assert.ok(provSettled, 'provision job settles');
+assert.equal(provSettled.phase, 'failed', 'unreachable url -> failed phase');
+assert.ok(String(provSettled.error || '').length > 0, 'failure carries a message');
+
+// 资产匹配矩阵：三个平台 × 两种架构都要挑对包
+const { pickAsset } = await import(new URL('../lib/provision.mjs', import.meta.url).href);
+// 真实 v0.4.0 资产名（全部是 .zip，darwin 叫 darwin-macos-*，另有 android/ios/freebsd 干扰项）
+const assetNames = [
+  'aliyunpan-v0.4.0-android-api21-arm64.zip',
+  'aliyunpan-v0.4.0-darwin-macos-amd64.zip',
+  'aliyunpan-v0.4.0-darwin-macos-arm64.zip',
+  'aliyunpan-v0.4.0-freebsd-amd64.zip',
+  'aliyunpan-v0.4.0-ios-arm64.zip',
+  'aliyunpan-v0.4.0-linux-386.zip',
+  'aliyunpan-v0.4.0-linux-amd64.zip',
+  'aliyunpan-v0.4.0-linux-arm64.zip',
+  'aliyunpan-v0.4.0-linux-armv7.zip',
+  'aliyunpan-v0.4.0-linux-loong64.zip',
+  'aliyunpan-v0.4.0-windows-arm64.zip',
+  'aliyunpan-v0.4.0-windows-x64.zip',
+  'aliyunpan-v0.4.0-windows-x86.zip',
+  'checksums.txt',
+];
+const assetList = assetNames.map((name) => ({ name, browser_download_url: 'https://example.test/' + name, size: 1 }));
+const expect = {
+  'win32/x64': 'aliyunpan-v0.4.0-windows-x64.zip',
+  'win32/arm64': 'aliyunpan-v0.4.0-windows-arm64.zip',
+  'win32/ia32': 'aliyunpan-v0.4.0-windows-x86.zip',
+  'linux/x64': 'aliyunpan-v0.4.0-linux-amd64.zip',
+  'linux/arm64': 'aliyunpan-v0.4.0-linux-arm64.zip',
+  'linux/arm': 'aliyunpan-v0.4.0-linux-armv7.zip',
+  'linux/ia32': 'aliyunpan-v0.4.0-linux-386.zip',
+  'darwin/x64': 'aliyunpan-v0.4.0-darwin-macos-amd64.zip',
+  'darwin/arm64': 'aliyunpan-v0.4.0-darwin-macos-arm64.zip',
+  'freebsd/x64': 'aliyunpan-v0.4.0-freebsd-amd64.zip',
+};
+for (const [key, wanted] of Object.entries(expect)) {
+  const [platform, arch] = key.split('/');
+  const picked = pickAsset(assetList, platform, arch);
+  assert.equal(picked && picked.name, wanted, 'pickAsset ' + key);
+}
+assert.equal(pickAsset(assetList, 'aix', 'ppc'), null, 'unsupported platform -> null');
+assert.equal(pickAsset([], 'win32', 'x64'), null, 'empty asset list -> null');
+
 const badRestore = await call(base + '/restore', { method: 'POST', body: { pkg: '/definitely/not/here' } });
 assert.equal(badRestore.status, 409, 'restore without a real package -> 409');
 assert.match(badRestore.json.error, /找不到包/);

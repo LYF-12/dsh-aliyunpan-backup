@@ -97,7 +97,7 @@ svg{max-width:100%;height:auto;display:block;margin:0 auto}
 <header class="hero">
   <h1>DSH 云同步 · 使用说明</h1>
   <p>把 DeepSeek Harness 的会话、附件、工作区索引、任务板，逐目录增量镜像到阿里云盘；换台电脑拉回来就能接着用。</p>
-  <div class="tags"><span>插件版本 0.4.0</span><span>同步主链路</span><span>附带包解码器</span><span>一主多从</span></div>
+  <div class="tags"><span>插件版本 0.4.1</span><span>同步主链路</span><span>附带包解码器</span><span>一主多从</span></div>
 </header>
 
 <section id="s1">
@@ -159,7 +159,13 @@ svg{max-width:100%;height:auto;display:block;margin:0 auto}
   <p class="lead">每台电脑都要做一遍：装命令行工具、登录、装插件。</p>
 
   <h3>2.1 装 aliyunpan 并登录</h3>
-  <p>插件不实现阿里云盘协议，只调用官方 CLI。把它解压到任意目录，或放进 <code>PATH</code>（插件会自动在 PATH 里找）。</p>
+  <p>插件不实现阿里云盘协议，只调用官方 CLI。两条路，任选一条：</p>
+  <div class="pipe">
+    <span class="node">配置页「运行环境」→ 下载并安装（推荐）</span><span class="arrow">→</span>
+    <span class="node">自动装进 <code>tools\</code></span>
+  </div>
+  <p><b>自举安装</b>：插件找不到 CLI 时，卡片和配置页都会出现「下载 aliyunpan」按钮。点一下就完成：查官方 release → 按平台/架构挑包 → 下载校验 → 解压到插件数据目录 <code>tools\</code> → 跑 <code>--version</code> 试跑 → 把路径写进配置。免安装、不写注册表、不要管理员权限。下载不通（大陆网络常见）就在同一张卡的「自定义地址」里填镜像直链。</p>
+  <p>也可以手动装：解压到任意目录，或放进 <code>PATH</code>（插件会自动在 PATH 里找）。</p>
 <pre><code>aliyunpan login        <span class="c"># 扫码 / 浏览器授权，凭据存本机</span>
 aliyunpan ls "/"       <span class="c"># 能列目录就算通了</span></code></pre>
   <div class="warn"><b>注意</b>不要把 <code>aliyunpan</code> 装在需要管理员权限才能读的目录，否则插件以普通用户启动子进程时会找不到。</div>
@@ -169,14 +175,14 @@ aliyunpan ls "/"       <span class="c"># 能列目录就算通了</span></code><
   <p>命令行安装<b>不会</b>自动登记 bundle：打开 <code>~/.dsh/profiles/desktop/package.json</code>，确认 <code>dsh.profile.bundles</code> 数组里有 <code>dsh-aliyunpan-backup</code>，没有就手动加一行。装完<b>重启 DSH</b>。</p>
 
   <h3>2.3 认识界面</h3>
-  <p>设置 → 插件 → 本插件是一张卡片：状态、上次结果、四个按钮。</p>
+  <p>设置 → 插件 → 本插件是一张卡片：状态、上次结果、四个按钮；缺 <code>aliyunpan</code> 时多一个「下载 aliyunpan」。</p>
   <div class="pipe">
     <span class="node host">同步上传</span><span class="arrow">·</span>
     <span class="node host">从机拉取</span><span class="arrow">·</span>
     <span class="node">刷新</span><span class="arrow">·</span>
     <span class="node">打开完整配置页</span>
   </div>
-  <p>完整配置页里六张卡：<b>同步</b>、<b>解码本地包</b>、<b>口令</b>、<b>路径配置</b>、<b>日志</b>。第一次用建议先开完整配置页做设置。</p>
+  <p>完整配置页里七张卡：<b>运行环境</b>、<b>同步</b>、<b>解码本地包</b>、<b>口令</b>、<b>路径配置</b>、<b>解码日志</b>。第一次用建议先开完整配置页做设置。</p>
 </section>
 
 <section id="s3">
@@ -317,7 +323,8 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "&lt;云端路径&gt;"
     <tr><td><code>stagingDir</code></td><td>空 = 自动</td><td>包与解包临时区</td></tr>
     <tr><td><code>keyFile</code></td><td>空 = <code>staging\KEY.txt</code></td><td>本机口令文件</td></tr>
     <tr><td><code>restoreDir</code></td><td>空 = <code>staging\restore\&lt;包名&gt;</code></td><td>解包输出目录</td></tr>
-    <tr><td><code>aliyunpanExe</code></td><td>空 = 自动探测</td><td>CLI 路径</td></tr>
+    <tr><td><code>aliyunpanExe</code></td><td>空 = 自动探测</td><td>CLI 路径（自举安装写入）</td></tr>
+    <tr><td><code>aliyunpanUrl</code></td><td>空 = GitHub 官方</td><td>自举安装的自定义下载地址</td></tr>
   </table>
 
   <h3>8.2 命令行等价物</h3>
@@ -329,7 +336,7 @@ node lib/scripts/syncd.mjs --mode download --prune --strict
 node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --verify-only
 node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --out &lt;目录&gt;</code></pre>
 
-  <h3>8.3 HTTP 路由（11 条，仅 loopback）</h3>
+  <h3>8.3 HTTP 路由（13 条，仅 loopback）</h3>
   <table>
     <tr><th>路由</th><th>方法</th><th>说明</th></tr>
     <tr><td><code>/api/dsh-aliyunpan-backup/ui</code></td><td>GET</td><td>完整配置页</td></tr>
@@ -339,6 +346,8 @@ node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --ou
     <tr><td><code>/restore</code></td><td>POST</td><td>校验或解包</td></tr>
     <tr><td><code>/key</code></td><td>GET/POST</td><td>口令查看 / 设置 / 生成</td></tr>
     <tr><td><code>/log</code></td><td>GET</td><td>解码日志</td></tr>
+    <tr><td><code>/provision</code></td><td>GET</td><td>aliyunpan 环境与安装状态</td></tr>
+    <tr><td><code>/provision/run</code></td><td>POST</td><td>自举安装（可带 url / tag）</td></tr>
     <tr><td><code>/sync</code></td><td>GET</td><td>同步配置与状态</td></tr>
     <tr><td><code>/sync/plan</code></td><td>GET</td><td>预演统计</td></tr>
     <tr><td><code>/sync/run</code></td><td>POST</td><td>开始同步</td></tr>
@@ -387,7 +396,7 @@ node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --ou
     <tr><td>云端同步根</td><td><code>/DeepSeek Harness/DSH-Sync</code></td></tr>
     <tr><td>云端旧包目录</td><td><code>/DeepSeek Harness/DSH-Backup</code></td></tr>
   </table>
-  <p class="foot">插件版本 0.4.0 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
+  <p class="foot">插件版本 0.4.1 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
 </section>
 
 </main>

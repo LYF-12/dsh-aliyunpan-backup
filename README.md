@@ -9,6 +9,7 @@
 - 同步是**明文镜像**：云端就是原始目录树，不用口令，能直接在网页版云盘里看/下载（见 §5）
 - 解码只处理加密包：口令（KEY.txt）**只在本机**，云端只有密文；解别人分享的包时在页面里临时填对方的口令即可（见 §6）
 - 界面：设置 → 插件 → 本插件里一个配置卡片；另有完整配置页 `/api/dsh-aliyunpan-backup/ui`
+- 自举安装：找不到 `aliyunpan` 时一键从 GitHub 官方发布装进插件数据目录
 - 宿主半侧只依赖 `webServer` 一个服务，浏览器半侧只 require `react`
 
 ---
@@ -29,21 +30,29 @@
 
 ## 2. 安装
 
-### 2.1 从前置条件说起：aliyunpan CLI
+### 2.1 前置条件：aliyunpan CLI（可以一键装）
 
-插件本身不实现阿里云盘协议，它调用官方命令行工具 `aliyunpan`（aliyunpan-go）。先装好并登录一次：
+插件本身不实现阿里云盘协议，它调用官方命令行工具 `aliyunpan`（aliyunpan-go）。
+
+**自举安装（0.4.1 起）**：插件找不到 aliyunpan 时，配置卡片和配置页里会多出一个「下载 aliyunpan」按钮。点一下它做三件事：
+
+1. 查 GitHub 官方发布（`tickstep/aliyunpan`）最新版，按当前平台/架构挑包（Windows x64/arm64/x86、Linux amd64/arm64/armv7/386、macOS Intel/Apple Silicon、FreeBSD）；
+2. 下载到插件数据目录并解压到 `<插件数据目录>/tools/`，记录 sha256；
+3. 跑一次 `aliyunpan --version` 确认能启动，然后把路径写进配置项 `aliyunpanExe`。
+
+不装服务、不写注册表、不需要管理员权限；失败时日志里留着原因和临时目录路径。下载不通（大陆网络常见）就在「下载不了？填自定义地址」里填镜像或内网文件服务器的压缩包直链，填过会记住。
+
+手动装也完全可以，两者等效：
 
 ```powershell
-# 1) 拿到 aliyunpan.exe（任选其一）
-#    - 官方 release 解压到任意目录
-#    - 或放进 PATH 里的某个目录
-# 2) 登录（会打开浏览器/扫码，凭据存到本机配置目录）
+# 1) 拿到 aliyunpan（官方 release 解压，或放进 PATH 里的某个目录）
+# 2) 登录一次（会打开浏览器/扫码，凭据存到本机配置目录）
 aliyunpan login
 # 3) 确认能列目录
 aliyunpan ls "/"
 ```
 
-插件按这个顺序找可执行文件：配置项 `aliyunpanExe` → 几个常见安装位置 → **`PATH` 里每一项**。所以只要 `aliyunpan` 在 PATH 里，什么都不用配。
+插件按这个顺序找可执行文件：配置项 `aliyunpanExe` → 插件数据目录 `tools/` → 几个常见安装位置 → **`PATH` 里每一项**。所以只要 `aliyunpan` 在 PATH 里，什么都不用配。
 
 ### 2.2 装插件（官方 CLI）
 
@@ -71,13 +80,15 @@ dsh plugin --profile desktop add link:D:\Code\deepseek\cs\dsh-aliyunpan-backup
 | 从机拉取 | 把云端内容拉回本机（增量 + 可选严格镜像） |
 | 刷新 | 重新读状态/日志 |
 | 打开完整配置页 / 复制配置页地址 | 卡片里内嵌完整页面；宿主拦弹窗时用复制地址 |
+| 下载 aliyunpan | **只在找不到 exe 时出现**，一键自举安装（见 §2.1） |
 
-完整配置页（`/api/dsh-aliyunpan-backup/ui`）六张卡：同步、解码本地包、口令、路径配置、日志。
+完整配置页（`/api/dsh-aliyunpan-backup/ui`）七张卡：运行环境、同步、解码本地包、口令、路径配置、解码日志；「运行环境」卡显示 aliyunpan 是否就绪、版本、安装路径、安装进度日志，以及自定义下载地址。
 
 ---
 
 ## 4. 一次性准备（主机）
 
+0. （没装过的话）在配置页「运行环境」里点「下载并安装 aliyunpan」，装完再 `aliyunpan login` 登录。
 1. `aliyunpan login` 登录（每台机器各自登录）。
 2. 打开完整配置页，在「同步」卡片勾选要同步的目录（默认 `sessions` / `attachments` / `storages` / `task-board`）。
 3. 点「预演」看一眼文件数与体积，再点「开始同步」做首次全量上传。
@@ -203,13 +214,14 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 | `stagingDir` | 空 = `D:\DSH-Backup`（存在时）否则 插件目录 `staging` | 包与解包临时区 |
 | `keyFile` | 空 = `staging\KEY.txt` | 本机口令文件 |
 | `restoreDir` | 空 = `staging\restore\<包名>` | 解包输出目录 |
-| `aliyunpanExe` | 空 = 自动探测 | CLI 路径 |
+| `aliyunpanExe` | 空 = 自动探测 | CLI 路径（自举安装会写这里） |
+| `aliyunpanUrl` | 空 = GitHub 官方发布 | 自举安装的自定义下载地址（镜像 / 内网文件服务器，必须 http(s) 且指到压缩包） |
 
 配置存放在 `~/.dsh/dsh-aliyunpan-backup/config.json`（可用 `DSH_AB_HOME` 改插件数据目录、`DSH_AB_CONFIG` 直接指定配置文件）。
 
 ---
 
-## 8. HTTP 路由（11 条，全部 exact + 仅 loopback）
+## 8. HTTP 路由（13 条，全部 exact + 仅 loopback）
 
 | 路由 | 方法 | 说明 |
 | --- | --- | --- |
@@ -224,6 +236,8 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 | `/sync/plan` | GET | 预演统计 |
 | `/sync/run` | POST | 开始同步（`{mode}`） |
 | `/sync/cancel` | POST | 取消同步 |
+| `/provision` | GET | aliyunpan 运行环境 + 安装状态与日志 |
+| `/provision/run` | POST | 自举安装（可带 `{url}` 覆盖下载地址，`{tag}` 指定版本） |
 
 ---
 
@@ -266,9 +280,10 @@ node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口�
 
 | 文件 | 作用 |
 | --- | --- |
-| `lib/index.js` | 宿主半侧：11 条路由 + 配置读写 + 口令 |
+| `lib/index.js` | 宿主半侧：13 条路由 + 配置读写 + 口令 |
 | `lib/client.js` | 设置卡片：同步上传 / 从机拉取 / 内嵌完整页 |
 | `lib/config.mjs` | 默认值、白名单、路径解析、`aliyunpan` 探测 |
+| `lib/provision.mjs` | 自举安装：查发布、挑包、下载校验、解压、试跑、写配置 |
 | `lib/runner.mjs` | 解码任务：解析包路径、起子进程、日志/状态 |
 | `lib/syncplan.mjs` | 预演统计 |
 | `lib/syncrun.mjs` | 同步任务进程管理 |
@@ -280,6 +295,13 @@ node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口�
 ---
 
 ## 12. 变更记录
+
+### 0.4.1
+
+- **新增自举安装 aliyunpan**：找不到 CLI 时卡片上出现「下载 aliyunpan」，从官方 release 下载 → 解压到 `tools/` → 记录 sha256 → `--version` 试跑 → 自动写 `aliyunpanExe`。
+- 配置页新增「运行环境」卡（状态/版本/路径/安装日志/自定义下载地址），配置新增 `aliyunpanUrl`，路由新增 `/provision`、`/provision/run`。
+- 资产匹配按平台+架构精确选择（含 `darwin-macos-*`、`windows-x86`、`linux-armv7` 等真实命名），排除 android/ios 包；无可选包时给出可读原因。
+- 测试新增：资产矩阵（10 组平台/架构）、不可达地址的失败路径、非 http 地址拒绝。
 
 ### 0.4.0
 

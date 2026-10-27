@@ -40,7 +40,7 @@
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
   th { color: var(--muted); font-weight: 600; }
-  pre#log, pre#syncLog { margin: 0; padding: 12px; border-radius: 8px; background: #0d1117; color: #c9d1d9;
+  pre#log, pre#syncLog, pre#envLog { margin: 0; padding: 12px; border-radius: 8px; background: #0d1117; color: #c9d1d9;
             max-height: 300px; overflow: auto; font-size: 12px; line-height: 1.45; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
   .err { color: var(--bad); font-size: 13px; }
@@ -64,6 +64,29 @@
       <span id="lastResult" class="muted"></span>
     </div>
     <div id="err" class="err"></div>
+  </div>
+
+  <div class="card">
+    <h2>运行环境（aliyunpan）</h2>
+    <div class="row" style="justify-content:space-between">
+      <span id="envState" class="badge"><span id="envDot" class="dot"></span><span id="envText">检查中…</span></span>
+      <span id="envVer" class="mono muted"></span>
+    </div>
+    <div id="envPath" class="hint"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnEnvInstall" class="primary">下载并安装 aliyunpan</button>
+      <button id="btnEnvOpen">打开安装目录</button>
+      <span id="envHint" class="muted"></span>
+    </div>
+    <details style="margin-top:10px">
+      <summary class="hint" style="cursor:pointer">下载不了？填自定义地址（镜像 / 内网文件服务器）</summary>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="envUrl" class="grow mono" placeholder="留空 = GitHub 官方发布（tickstep/aliyunpan）">
+      </div>
+      <div class="hint">地址要指到压缩包本体（<code>.zip</code> 或 <code>.tar.gz</code>）。填过一次会记住；清空后保存即恢复官方源。</div>
+    </details>
+    <pre id="envLog" style="margin-top:10px">（暂无）</pre>
+    <div class="hint">自举安装只做三件事：下载官方发布包 → 解压到插件数据目录 <code>tools\</code> → 跑一次 <code>--version</code> 确认能启动，然后把路径写进配置。不装服务、不写注册表、不需要管理员权限。</div>
   </div>
 
   <div class="card">
@@ -491,6 +514,75 @@ async function saveSyncQuiet() {
   }
 }
 
+let envTimer = null;
+
+function fillEnv(data) {
+  const running = data.running === true;
+  const done = data.phase === 'done';
+  const failed = data.phase === 'failed';
+  const installed = data.installed === true;
+  $('envDot').className = 'dot ' + (running ? 'run' : installed ? 'ok' : failed ? 'bad' : '');
+  $('envText').textContent = running
+    ? '正在安装 · ' + (data.phase || '')
+    : installed
+      ? '已就绪' + (data.managed ? '（插件托管）' : '')
+      : failed
+        ? '安装失败'
+        : '未安装';
+  $('envVer').textContent = data.result && data.result.version ? data.result.version : '';
+  $('envPath').textContent = installed
+    ? 'aliyunpan：' + data.exe
+    : data.supported === false
+      ? '当前平台（' + data.platform + '/' + data.arch + '）没有官方包，只能手动指定可执行文件。'
+      : '未找到 aliyunpan。同步功能需要它；点上面按钮即可自动装到 ' + (data.target || '插件数据目录\tools');
+  $('btnEnvInstall').textContent = installed ? '重新下载 / 覆盖安装' : '下载并安装 aliyunpan';
+  $('btnEnvInstall').disabled = running;
+  $('envLog').textContent = (data.log && data.log.length ? data.log.join('\n') : '（暂无）');
+  if (data.error) $('envHint').textContent = '失败：' + data.error;
+  else if (running) $('envHint').textContent = '下载中，请稍候…';
+  else $('envHint').textContent = '';
+  if (running) {
+    if (envTimer) clearTimeout(envTimer);
+    envTimer = setTimeout(refreshEnv, 1200);
+  } else if (done && data.result && data.result.ok) {
+    if (envTimer) clearTimeout(envTimer);
+    envTimer = setTimeout(refresh, 600);
+  }
+}
+
+async function refreshEnv() {
+  try {
+    const data = await api('/provision');
+    fillEnv(data);
+    if (!$('envUrl').value && data.customUrl) $('envUrl').value = data.customUrl;
+  } catch (error) {
+    $('envText').textContent = '检查失败';
+    $('envHint').textContent = String(error.message || error);
+  }
+}
+
+async function installEnv() {
+  const url = $('envUrl').value.trim();
+  $('btnEnvInstall').disabled = true;
+  $('envHint').textContent = '准备下载…';
+  try {
+    await api('/provision/run', { method: 'POST', body: JSON.stringify(url ? { url } : {}) });
+    refreshEnv();
+  } catch (error) {
+    $('btnEnvInstall').disabled = false;
+    $('envHint').textContent = String(error.message || error);
+  }
+}
+
+$('btnEnvInstall').onclick = installEnv;
+$('btnEnvOpen').onclick = async () => {
+  try {
+    const data = await api('/provision');
+    $('envHint').textContent = '安装目录：' + data.target;
+  } catch (error) {
+    $('envHint').textContent = String(error.message || error);
+  }
+};
 $('btnRefresh').onclick = refresh;
 $('btnSave').onclick = save;
 $('btnPkgInspect').onclick = inspect;
@@ -510,6 +602,7 @@ $('btnSyncCancel').onclick = async () => {
 loadKey();
 refresh();
 refreshSync();
+refreshEnv();
 </script>
 </body>
 </html>
