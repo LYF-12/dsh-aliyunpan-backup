@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DSH 云同步 · 使用说明</title>
+<style>
+:root{--bg:#f6f8fb;--card:#fff;--ink:#16202b;--muted:#5d6b7a;--line:#e2e8f0;--blue:#2563eb;--blue-soft:#eef4ff;--teal:#0f766e;--teal-soft:#e8f6f4;--amber:#b45309;--amber-soft:#fff6e6;--red:#b42318;--red-soft:#fdeceb;--mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{display:flex;align-items:flex-start;gap:32px;max-width:1360px;margin:0 auto;padding:28px 24px 80px}
+nav.toc{position:sticky;top:24px;flex:0 0 236px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 16px;max-height:calc(100vh - 48px);overflow:auto;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+nav.toc h2{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+nav.toc ol{margin:0;padding-left:0;list-style:none;counter-reset:toc}
+nav.toc li{counter-increment:toc;margin:2px 0}
+nav.toc a{display:block;padding:6px 9px;border-radius:8px;font-size:13.5px;color:#334155}
+nav.toc a::before{content:counter(toc) ". ";color:#94a3b8}
+nav.toc a:hover{background:var(--blue-soft);text-decoration:none;color:var(--blue)}
+main{flex:1 1 auto;min-width:0}
+header.hero{background:linear-gradient(135deg,#1d4ed8 0%,#0f766e 100%);color:#fff;border-radius:18px;padding:28px 30px;margin-bottom:22px}
+header.hero h1{margin:0 0 6px;font-size:27px;letter-spacing:-.01em}
+header.hero p{margin:0;opacity:.92;font-size:14.5px}
+header.hero .tags{margin-top:14px;display:flex;flex-wrap:wrap;gap:8px}
+header.hero .tags span{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);padding:3px 10px;border-radius:999px;font-size:12.5px}
+section{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px 26px;margin-bottom:18px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+section>h2{margin:0 0 4px;font-size:20px;letter-spacing:-.01em}
+section>h2 .n{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;background:var(--blue-soft);color:var(--blue);font-size:14px;margin-right:9px;vertical-align:2px}
+section>p.lead{color:var(--muted);margin:0 0 16px;font-size:14px}
+h3{font-size:15.5px;margin:22px 0 8px}h3:first-of-type{margin-top:6px}
+p{margin:9px 0}
+ul,ol{margin:9px 0;padding-left:22px}li{margin:5px 0}
+code{font-family:var(--mono);font-size:12.8px;background:#f1f5f9;border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+pre{background:#0f172a;color:#e2e8f0;border-radius:12px;padding:15px 17px;overflow:auto;font-family:var(--mono);font-size:12.6px;line-height:1.7;margin:12px 0}
+pre code{background:none;border:0;padding:0;color:inherit;font-size:inherit}
+pre .c{color:#7c8ea6}pre .g{color:#7ee787}
+table{width:100%;border-collapse:collapse;font-size:13.6px;margin:12px 0}
+th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:#f8fafc;font-weight:600;color:#334155;font-size:12.8px;letter-spacing:.02em}
+tr:last-child td{border-bottom:0}
+td code{white-space:nowrap}
+.note{border-left:4px solid var(--blue);background:var(--blue-soft);border-radius:0 10px 10px 0;padding:12px 16px;margin:14px 0;font-size:14px}
+.warn{border-left:4px solid var(--amber);background:var(--amber-soft);border-radius:0 10px 10px 0;padding:12px 16px;margin:14px 0;font-size:14px}
+.danger{border-left:4px solid var(--red);background:var(--red-soft);border-radius:0 10px 10px 0;padding:12px 16px;margin:14px 0;font-size:14px}
+.ok{border-left:4px solid var(--teal);background:var(--teal-soft);border-radius:0 10px 10px 0;padding:12px 16px;margin:14px 0;font-size:14px}
+.note b,.warn b,.danger b,.ok b{display:block;margin-bottom:2px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.card{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:#fcfdff}
+.card h4{margin:0 0 6px;font-size:14px}.card p{margin:0;color:var(--muted);font-size:13.4px}
+.flow{counter-reset:step;display:flex;flex-direction:column;gap:0;margin:14px 0}
+.step{position:relative;padding:0 0 18px 44px;counter-increment:step}
+.step:last-child{padding-bottom:0}
+.step::before{content:counter(step);position:absolute;left:0;top:0;width:28px;height:28px;border-radius:50%;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13.5px;font-weight:600}
+.step::after{content:"";position:absolute;left:13.5px;top:30px;bottom:0;width:1.5px;background:var(--line)}
+.step:last-child::after{display:none}
+.step h4{margin:2px 0 4px;font-size:14.5px}
+.step p{margin:0;color:var(--muted);font-size:13.4px}
+.pipe{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0}
+.pipe .node{border:1px solid var(--line);background:#fcfdff;border-radius:10px;padding:8px 12px;font-size:13px;white-space:nowrap}
+.pipe .node.host{border-color:#bfdbfe;background:var(--blue-soft);color:#1e3a8a}
+.pipe .node.cloud{border-color:#c7e5e1;background:var(--teal-soft);color:#0b4f4a}
+.pipe .arrow{color:#94a3b8;font-size:15px}
+.kbd{font-family:var(--mono);font-size:12px;border:1px solid #cbd5e1;border-bottom-width:2px;border-radius:6px;padding:1px 6px;background:#fff}
+figure{margin:16px 0}figcaption{color:var(--muted);font-size:12.8px;margin-top:8px;text-align:center}
+svg{max-width:100%;height:auto;display:block;margin:0 auto}
+.pill{display:inline-block;font-size:11.6px;padding:1px 8px;border-radius:999px;background:var(--blue-soft);color:var(--blue);border:1px solid #dbeafe;vertical-align:1px}
+.pill.g{background:var(--teal-soft);color:var(--teal);border-color:#c7e5e1}
+.pill.a{background:var(--amber-soft);color:var(--amber);border-color:#fde68a}
+.foot{color:var(--muted);font-size:12.8px;text-align:center;margin:26px 0 0}
+@media (max-width:1000px){.wrap{flex-direction:column}nav.toc{position:static;flex:none;width:100%;max-height:none}.grid2,.grid3{grid-template-columns:1fr}}
+@media print{body{background:#fff}nav.toc{display:none}.wrap{display:block;padding:0}section{break-inside:avoid;box-shadow:none;border-color:#ddd}header.hero{background:#1d4ed8 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<nav class="toc">
+  <h2>目录</h2>
+  <ol>
+    <li><a href="#s1">三十秒看懂</a></li>
+    <li><a href="#s2">一次性准备</a></li>
+    <li><a href="#s3">上传：本机 → 云端</a></li>
+    <li><a href="#s4">拉取：云端 → 本机</a></li>
+    <li><a href="#s5">另一台电脑怎么用</a></li>
+    <li><a href="#s6">解码加密包</a></li>
+    <li><a href="#s7">多机与换机注意</a></li>
+    <li><a href="#s8">配置与命令速查</a></li>
+    <li><a href="#s9">常见问题</a></li>
+    <li><a href="#s10">路径总览</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<header class="hero">
+  <h1>DSH 云同步 · 使用说明</h1>
+  <p>把 DeepSeek Harness 的会话、附件、工作区索引、任务板，逐目录增量镜像到阿里云盘；换台电脑拉回来就能接着用。</p>
+  <div class="tags"><span>插件版本 0.4.0</span><span>同步主链路</span><span>附带包解码器</span><span>一主多从</span></div>
+</header>
+
+<section id="s1">
+  <h2><span class="n">1</span>三十秒看懂</h2>
+  <p class="lead">只有两条链路：<b>同步</b>（搬数据）和<b>解码</b>（开旧包）。同步是明文镜像，不走加密。</p>
+
+  <figure>
+  <svg viewBox="0 0 980 300" role="img" aria-label="本机与云端与另一台电脑之间的同步关系">
+    <defs>
+      <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#94a3b8"/></marker>
+      <marker id="arb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#2563eb"/></marker>
+      <marker id="arg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#0f766e"/></marker>
+    </defs>
+    <rect x="20" y="46" width="250" height="180" rx="14" fill="#eef4ff" stroke="#bfdbfe"/>
+    <text x="145" y="80" text-anchor="middle" font-size="15" font-weight="700" fill="#1e3a8a">本机 A（主机）</text>
+    <text x="145" y="104" text-anchor="middle" font-size="12.5" fill="#475569">~/.dsh</text>
+    <rect x="44" y="120" width="202" height="24" rx="7" fill="#fff" stroke="#c7d2fe"/><text x="145" y="137" text-anchor="middle" font-size="12" fill="#334155">sessions / attachments</text>
+    <rect x="44" y="152" width="202" height="24" rx="7" fill="#fff" stroke="#c7d2fe"/><text x="145" y="169" text-anchor="middle" font-size="12" fill="#334155">storages / task-board</text>
+    <rect x="44" y="184" width="202" height="24" rx="7" fill="#fff" stroke="#c7d2fe"/><text x="145" y="201" text-anchor="middle" font-size="12" fill="#334155">skins / pets / eda …</text>
+
+    <rect x="365" y="66" width="250" height="140" rx="14" fill="#e8f6f4" stroke="#c7e5e1"/>
+    <text x="490" y="98" text-anchor="middle" font-size="15" font-weight="700" fill="#0b4f4a">阿里云盘</text>
+    <text x="490" y="122" text-anchor="middle" font-size="12.5" fill="#334155">/DeepSeek Harness/DSH-Sync</text>
+    <rect x="389" y="136" width="202" height="26" rx="7" fill="#fff" stroke="#a7d8d2"/><text x="490" y="154" text-anchor="middle" font-size="12" fill="#334155">sessions / attachments / …</text>
+    <text x="490" y="184" text-anchor="middle" font-size="11.6" fill="#0f766e">原始目录树 · 明文 · 云端可直接看</text>
+
+    <rect x="710" y="46" width="250" height="180" rx="14" fill="#eef4ff" stroke="#bfdbfe"/>
+    <text x="835" y="80" text-anchor="middle" font-size="15" font-weight="700" fill="#1e3a8a">另一台电脑 B（从机）</text>
+    <text x="835" y="104" text-anchor="middle" font-size="12.5" fill="#475569">~/.dsh（同一版本 DSH）</text>
+    <rect x="734" y="120" width="202" height="24" rx="7" fill="#fff" stroke="#c7d2fe"/><text x="835" y="137" text-anchor="middle" font-size="12" fill="#334155">aliyunpan login</text>
+    <rect x="734" y="152" width="202" height="24" rx="7" fill="#fff" stroke="#c7d2fe"/><text x="835" y="169" text-anchor="middle" font-size="12" fill="#334155">开始同步（拉取）</text>
+    <rect x="734" y="184" width="202" height="24" rx="7" fill="#fff" stroke="#c7d2fe"/><text x="835" y="201" text-anchor="middle" font-size="12" fill="#334155">退出 DSH 后落盘</text>
+
+    <line x1="276" y1="118" x2="358" y2="118" stroke="#2563eb" stroke-width="2" marker-end="url(#arb)"/>
+    <text x="317" y="110" text-anchor="middle" font-size="11.6" fill="#2563eb">上传（增量）</text>
+    <line x1="626" y1="156" x2="704" y2="156" stroke="#0f766e" stroke-width="2" marker-end="url(#arg)"/>
+    <text x="665" y="148" text-anchor="middle" font-size="11.6" fill="#0f766e">拉取（增量）</text>
+    <line x1="358" y1="186" x2="278" y2="186" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#ar)"/>
+    <text x="317" y="204" text-anchor="middle" font-size="11.6" fill="#64748b">反向也可拉</text>
+
+    <text x="490" y="256" text-anchor="middle" font-size="12.4" fill="#64748b">同一份数据，谁都能推 / 谁都能拉；实际用的是一主多从，见第 7 节</text>
+    <rect x="365" y="22" width="250" height="30" rx="9" fill="#fff" stroke="#e2e8f0"/>
+    <text x="490" y="42" text-anchor="middle" font-size="12" fill="#334155">插件：设置 → 插件 → 阿里云盘同步</text>
+    <line x1="490" y1="52" x2="490" y2="64" stroke="#cbd5e1" stroke-width="1.5"/>
+  </svg>
+  <figcaption>图 1 · 两台电脑共用云端一份数据；上传和拉取都只传变化的文件</figcaption>
+  </figure>
+
+  <div class="grid2">
+    <div class="card"><h4>同步 <span class="pill g">主链路</span></h4><p>把 <code>~/.dsh</code> 里选中的 4 个（或更多）目录按文件推到云端；云端就是原始目录树，不用口令。换台电脑拉回来即可。</p></div>
+    <div class="card"><h4>解码 <span class="pill a">兼容</span></h4><p>0.4.0 起不再打包加密上传。旧的 <code>payload.enc</code> 或别人分享的包，仍可在页面里校验、解包。</p></div>
+  </div>
+
+  <div class="note"><b>一分钟版本</b>装插件 → <code>aliyunpan login</code> → 勾目录 → 「开始同步」上传 → 另一台同样装插件、登录、点「从机拉取」。</div>
+</section>
+
+<section id="s2">
+  <h2><span class="n">2</span>一次性准备</h2>
+  <p class="lead">每台电脑都要做一遍：装命令行工具、登录、装插件。</p>
+
+  <h3>2.1 装 aliyunpan 并登录</h3>
+  <p>插件不实现阿里云盘协议，只调用官方 CLI。把它解压到任意目录，或放进 <code>PATH</code>（插件会自动在 PATH 里找）。</p>
+<pre><code>aliyunpan login        <span class="c"># 扫码 / 浏览器授权，凭据存本机</span>
+aliyunpan ls "/"       <span class="c"># 能列目录就算通了</span></code></pre>
+  <div class="warn"><b>注意</b>不要把 <code>aliyunpan</code> 装在需要管理员权限才能读的目录，否则插件以普通用户启动子进程时会找不到。</div>
+
+  <h3>2.2 装插件</h3>
+<pre><code>dsh plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup</code></pre>
+  <p>命令行安装<b>不会</b>自动登记 bundle：打开 <code>~/.dsh/profiles/desktop/package.json</code>，确认 <code>dsh.profile.bundles</code> 数组里有 <code>dsh-aliyunpan-backup</code>，没有就手动加一行。装完<b>重启 DSH</b>。</p>
+
+  <h3>2.3 认识界面</h3>
+  <p>设置 → 插件 → 本插件是一张卡片：状态、上次结果、四个按钮。</p>
+  <div class="pipe">
+    <span class="node host">同步上传</span><span class="arrow">·</span>
+    <span class="node host">从机拉取</span><span class="arrow">·</span>
+    <span class="node">刷新</span><span class="arrow">·</span>
+    <span class="node">打开完整配置页</span>
+  </div>
+  <p>完整配置页里六张卡：<b>同步</b>、<b>解码本地包</b>、<b>口令</b>、<b>路径配置</b>、<b>日志</b>。第一次用建议先开完整配置页做设置。</p>
+</section>
+
+<section id="s3">
+  <h2><span class="n">3</span>上传：本机 → 云端</h2>
+  <p class="lead">把本机数据推到云端。第一次是全量，之后只传变化的文件。</p>
+
+  <div class="flow">
+    <div class="step"><h4>选目录</h4><p>同步卡片里勾选要传的目录。默认四个：<code>sessions</code>（会话）、<code>attachments</code>（附件）、<code>storages</code>（工作区/定时/索引）、<code>task-board</code>（任务板）。还可以加 <code>skins</code>、<code>pets</code>、<code>eda</code>、<code>sources</code>、<code>backups</code>、<code>dsh-usage</code>。</p></div>
+    <div class="step"><h4>预演</h4><p>点「预演」只做统计：多少个文件、多少 MB、云端目标路径。不动云端也不动本机。心里有数再传。</p></div>
+    <div class="step"><h4>开始同步（upload 模式）</h4><p>新增文件走 <code>--skip</code>（云端同名跳过），修改文件走 <code>-ow</code> 覆盖，无变化直接跳过。按云端父目录分批、每批 ≤20 个、4 并发。</p></div>
+    <div class="step"><h4>看结果</h4><p>每个目录一行：<code>OK 上传 N 个文件 用时 Ns</code>。末行固定 <code>SYNC RESULT: mode=upload roots=N files=N failed=0</code>。失败数非 0 就看下面的同步日志。</p></div>
+  </div>
+
+  <h3>云端长什么样</h3>
+<pre><code>/DeepSeek Harness/DSH-Sync/
+  sessions/      <span class="c"># 每个会话一个 .jsonl.zstd</span>
+  attachments/   <span class="c"># 按 sha256 分桶的对象文件</span>
+  storages/
+  task-board/
+  _last-sync-A.json   <span class="c"># 本机留痕，供其它机器判断谁最近同步过</span></code></pre>
+
+  <div class="ok"><b>为什么只传变化的部分</b>本地 <code>sync-index.json</code> 记着每个文件的 size + mtime。比对出新/改/不变，分别处理。索引丢了会自动退回全量覆盖，不会漏内容。</div>
+</section>
+
+<section id="s4">
+  <h2><span class="n">4</span>拉取：云端 → 本机</h2>
+  <p class="lead">把云端的改动拉回本机。默认只增不删，覆盖同名文件。</p>
+
+  <div class="flow">
+    <div class="step"><h4>先退出 DSH</h4><p>正在运行的 DSH 握着会话文件与锁文件，Windows 上写入会被拒。要么退出应用，要么只拉不覆盖（默认只增不删仍可能碰到同名文件）。</p></div>
+    <div class="step"><h4>点「从机拉取」</h4><p>切到 download 模式执行。先把云端目录下到暂存目录 <code>syncDlDir</code>（留空 = 插件数据目录下 <code>sync-dl</code>），再由插件逐文件镜像进 <code>~/.dsh</code>。</p></div>
+    <div class="step"><h4>看结果</h4><p><code>OK 下载 N 更新 N 未变 N</code>。默认不删本机多余文件；勾了 <b>拉取时删除本机多余文件</b> 才是严格镜像（会删）。</p></div>
+  </div>
+
+  <div class="warn"><b>为什么不让 CLI 直接写 ~/.dsh</b>CLI 会自己多建一层 <code>DeepSeek Harness\DSH-Sync\</code> 目录，路径就错了；而且只有逐文件比对才能做到只写变化的部分。所以中间加了一层暂存目录。</div>
+
+  <h3>严格镜像（可选）</h3>
+  <p>勾选 <code>syncPrune</code>（配置键 <code>syncPrune: true</code>）后，本机比云端多出来的文件会被删除，两边完全一致。适合「从机只读，不产生自己的数据」的用法。<b>第一次开之前先备份。</b></p>
+</section>
+
+<section id="s5">
+  <h2><span class="n">5</span>另一台电脑怎么用</h2>
+  <p class="lead">新机器只有三步：装插件、登录云盘、拉取。</p>
+
+  <h3>5.1 标准流程</h3>
+<pre><code><span class="c"># 1) 装 aliyunpan 并登录</span>
+aliyunpan login
+
+<span class="c"># 2) 装插件（同版本 DSH 更稳）</span>
+dsh plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup
+
+<span class="c"># 3) 确认 bundle 已登记，然后重启 DSH</span>
+<span class="c">#    设置 → 插件 → 阿里云盘同步 → 从机拉取</span></code></pre>
+
+  <h3>5.2 拉取前后</h3>
+  <table>
+    <tr><th>时机</th><th>做什么</th><th>为什么</th></tr>
+    <tr><td>拉取前</td><td>退出 DSH</td><td>会话/锁文件被占用，写入会被拒</td></tr>
+    <tr><td>拉取后</td><td>启动 DSH，检查工作区列表与会话</td><td>工作区路径是绝对路径，A 机的路径在 B 机上可能不存在</td></tr>
+    <tr><td>首次</td><td>在 B 机上做一次「同步上传」为空跑</td><td>建立本地索引，之后拉取才按增量走</td></tr>
+  </table>
+
+  <div class="note"><b>路径不一致怎么办</b><code>storages/workspace.json</code> 里存的是工作区的绝对路径。B 机上如果路径不同，DSH 里对应的会话会显示为不可用，手动重新添加工作区即可，不影响会话内容本身。</div>
+
+  <h3>5.3 不要两台同时传</h3>
+  <p>同步没有合并逻辑：同一文件两边都改，后传的覆盖先传的。约定一台主机推、其它只拉最省心。插件会在 <code>syncLockMinutes</code>（默认 60）内检测到其它机器的活动并告警。</p>
+</section>
+
+<section id="s6">
+  <h2><span class="n">6</span>解码加密包</h2>
+  <p class="lead">0.4.0 起不做打包上传了，但旧包和别人的包仍然能开。</p>
+
+  <div class="pipe">
+    <span class="node">选择 payload.enc 或包目录</span><span class="arrow">→</span>
+    <span class="node">检查这个包</span><span class="arrow">→</span>
+    <span class="node">校验完整性</span><span class="arrow">→</span>
+    <span class="node">解包到独立目录</span>
+  </div>
+
+  <h3>6.1 包的结构</h3>
+<pre><code>&lt;包目录&gt;/
+  payload.enc        <span class="c"># DSHBK002 容器：36B header + 每 1MiB 一块 tag16|ciphertext</span>
+  package.info.json  <span class="c"># 明文：createdAt / fileCount / totalBytes</span></code></pre>
+  <p>AES-256-GCM 分块，密钥由 <code>scrypt(口令, salt, 32)</code> 派生，AAD 为 <code>dshbk-chunk-&lt;i&gt;</code>。明文是 <code>DSHBUNDLE1</code> 容器，内含每个文件的 sha256 清单。</p>
+
+  <h3>6.2 两种操作</h3>
+  <table>
+    <tr><th>按钮</th><th>做什么</th><th>输出</th></tr>
+    <tr><td>校验完整性</td><td>逐块解密 + 逐文件比 sha256，不落盘</td><td><code>verify: ok=N bad=0 missing=0</code></td></tr>
+    <tr><td>解包</td><td>解密后写到输出目录，附 <code>RESTORE-manifest.json</code></td><td><code>extracted=N</code></td></tr>
+  </table>
+  <p>解包<b>不会覆盖</b> <code>~/.dsh</code>：默认落到 <code>restore\&lt;包名&gt;</code>，自己挑需要的文件拷回去。</p>
+
+  <h3>6.3 解别人分享的包</h3>
+  <p>「口令」栏留空 = 用本机 <code>KEY.txt</code>；解别人的包时直接在解码卡片的 <b>口令</b> 输入框里填对方给的口令即可，不会写盘、也不会覆盖你自己的口令。</p>
+
+  <h3>6.4 换电脑开旧包</h3>
+<pre><code>aliyunpan ls "/DeepSeek Harness/DSH-Backup/snapshots"
+aliyunpan download --saveto "D:\DSH-Backup\snapshots" "&lt;云端路径&gt;"
+<span class="c"># 然后：解码本地包 → 检查 → 校验 → 解包</span></code></pre>
+
+  <table>
+    <tr><th>退出码</th><th>含义</th></tr>
+    <tr><td>0</td><td>成功</td></tr>
+    <tr><td>2</td><td>缺参数（<code>--pkg</code> / <code>--out</code>）</td></tr>
+    <tr><td>3</td><td>不是 <code>DSHBK002</code> 容器</td></tr>
+    <tr><td>4</td><td><code>AUTH FAIL at chunk N</code>：口令错或包损坏</td></tr>
+    <tr><td>5</td><td>明文不是 <code>DSHBUNDLE1</code></td></tr>
+    <tr><td>6</td><td>校验失败（有 bad / missing）</td></tr>
+  </table>
+</section>
+
+<section id="s7">
+  <h2><span class="n">7</span>多机与换机注意</h2>
+  <div class="grid2">
+    <div class="card"><h4>一主多从</h4><p>一台负责推，其它只拉。多台都推会互相覆盖。</p></div>
+    <div class="card"><h4>锁与留痕</h4><p>每台写 <code>_last-sync-&lt;机器名&gt;.json</code>；<code>syncLockMinutes</code> 内检测到别家活动会告警，<code>--strict</code> 下直接退出。</p></div>
+    <div class="card"><h4>DSH 版本</h4><p>两台用相近版本的 DSH，会话与索引格式才兼容。</p></div>
+    <div class="card"><h4>隐私</h4><p>同步是明文，云端目录可以直接打开。附件里有隐私内容时慎选目录。</p></div>
+  </div>
+  <div class="danger"><b>不要对同一份数据同时开同步与旧备份上传</b>旧版 0.3.x 的打包链路已移除；如仍有旧客户端在跑，注意它们不共享索引，会互相覆盖文件。</div>
+</section>
+
+<section id="s8">
+  <h2><span class="n">8</span>配置与命令速查</h2>
+
+  <h3>8.1 配置项</h3>
+  <table>
+    <tr><th>键</th><th>默认</th><th>说明</th></tr>
+    <tr><td><code>dshHome</code></td><td><code>~/.dsh</code></td><td>要同步的数据目录</td></tr>
+    <tr><td><code>syncDir</code></td><td><code>/DeepSeek Harness/DSH-Sync</code></td><td>云端同步根</td></tr>
+    <tr><td><code>syncDirs</code></td><td>sessions, attachments, storages, task-board</td><td>同步哪些子目录</td></tr>
+    <tr><td><code>syncMode</code></td><td><code>upload</code></td><td>upload / download</td></tr>
+    <tr><td><code>syncMachine</code></td><td>空 = 计算机名</td><td>锁与留痕的机器标识</td></tr>
+    <tr><td><code>syncLockMinutes</code></td><td><code>60</code></td><td>其它机器活动窗口，0 = 不检查</td></tr>
+    <tr><td><code>syncDlDir</code></td><td>空 = 插件目录 <code>sync-dl</code></td><td>拉取暂存目录</td></tr>
+    <tr><td><code>syncPrune</code></td><td><code>false</code></td><td>拉取时删本机多余文件</td></tr>
+    <tr><td><code>stagingDir</code></td><td>空 = 自动</td><td>包与解包临时区</td></tr>
+    <tr><td><code>keyFile</code></td><td>空 = <code>staging\KEY.txt</code></td><td>本机口令文件</td></tr>
+    <tr><td><code>restoreDir</code></td><td>空 = <code>staging\restore\&lt;包名&gt;</code></td><td>解包输出目录</td></tr>
+    <tr><td><code>aliyunpanExe</code></td><td>空 = 自动探测</td><td>CLI 路径</td></tr>
+  </table>
+
+  <h3>8.2 命令行等价物</h3>
+<pre><code>node lib/scripts/syncd.mjs --mode plan        <span class="c"># 预演</span>
+node lib/scripts/syncd.mjs --mode upload      <span class="c"># 上传</span>
+node lib/scripts/syncd.mjs --mode download    <span class="c"># 拉取</span>
+node lib/scripts/syncd.mjs --mode download --prune --strict
+
+node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --verify-only
+node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --out &lt;目录&gt;</code></pre>
+
+  <h3>8.3 HTTP 路由（11 条，仅 loopback）</h3>
+  <table>
+    <tr><th>路由</th><th>方法</th><th>说明</th></tr>
+    <tr><td><code>/api/dsh-aliyunpan-backup/ui</code></td><td>GET</td><td>完整配置页</td></tr>
+    <tr><td><code>/status</code></td><td>GET</td><td>状态 + 本地包列表 + 日志尾巴</td></tr>
+    <tr><td><code>/config</code></td><td>GET/POST</td><td>读 / 存配置</td></tr>
+    <tr><td><code>/inspect?pkg=</code></td><td>GET</td><td>探测路径是不是包</td></tr>
+    <tr><td><code>/restore</code></td><td>POST</td><td>校验或解包</td></tr>
+    <tr><td><code>/key</code></td><td>GET/POST</td><td>口令查看 / 设置 / 生成</td></tr>
+    <tr><td><code>/log</code></td><td>GET</td><td>解码日志</td></tr>
+    <tr><td><code>/sync</code></td><td>GET</td><td>同步配置与状态</td></tr>
+    <tr><td><code>/sync/plan</code></td><td>GET</td><td>预演统计</td></tr>
+    <tr><td><code>/sync/run</code></td><td>POST</td><td>开始同步</td></tr>
+    <tr><td><code>/sync/cancel</code></td><td>POST</td><td>取消同步</td></tr>
+  </table>
+</section>
+
+<section id="s9">
+  <h2><span class="n">9</span>常见问题</h2>
+
+  <h3>上传很慢 / 一直 0 个文件</h3>
+  <p>0 个文件 = 索引显示无变化。想强制重传，删掉插件数据目录下的 <code>sync-index.json</code> 再同步（会走全量覆盖）。慢通常是云盘限速，不是插件。</p>
+
+  <h3>日志里出现 Access is denied</h3>
+  <p>安全软件拦了 <code>aliyunpan.exe</code> 写盘。把 <code>syncDlDir</code> 换到它允许的目录（例如开发目录），或给 exe 加白。日志里会有 <code>[hint]</code> 提示。</p>
+
+  <h3>云端出现 name(1).ext 副本</h3>
+  <p>同一次上传里同名文件重复且没走 <code>--skip</code>。本插件新增走 <code>--skip</code> 不会产生副本；若已经产生，删掉副本再同步一次。</p>
+
+  <h3>拉取后 DSH 里的工作区不见了</h3>
+  <p><code>storages/workspace.json</code> 里是绝对路径，换机后路径不存在。重新添加工作区即可，会话内容还在。</p>
+
+  <h3>解包报 AUTH FAIL at chunk 0</h3>
+  <p>口令错（或包损坏）。注意口令区分大小写、前后不要带空格。别人分享的包要在解码卡片里填口令，不是本机 KEY.txt。</p>
+
+  <h3>还能不能加密上传</h3>
+  <p>0.4.0 起没有打包上传入口。要加密留档，可以自行打包后放云盘，再用解码器打开；同步链路本身是明文。</p>
+
+  <h3>两台电脑都点上传了</h3>
+  <p>后传的覆盖先传的。没有自动合并。恢复办法：从另一台再拉一次，或用文件历史/云盘回收站找回。</p>
+</section>
+
+<section id="s10">
+  <h2><span class="n">10</span>路径总览</h2>
+  <table>
+    <tr><th>内容</th><th>默认位置</th></tr>
+    <tr><td>DSH 数据</td><td><code>%USERPROFILE%\.dsh</code></td></tr>
+    <tr><td>插件数据</td><td><code>%USERPROFILE%\.dsh\dsh-aliyunpan-backup</code></td></tr>
+    <tr><td>插件配置</td><td><code>…\dsh-aliyunpan-backup\config.json</code></td></tr>
+    <tr><td>同步索引</td><td><code>…\dsh-aliyunpan-backup\sync-index.json</code></td></tr>
+    <tr><td>同步日志</td><td><code>…\dsh-aliyunpan-backup\sync.log</code></td></tr>
+    <tr><td>拉取暂存</td><td><code>…\dsh-aliyunpan-backup\sync-dl</code></td></tr>
+    <tr><td>解码临时区</td><td><code>D:\DSH-Backup</code>（存在时）否则 <code>…\staging</code></td></tr>
+    <tr><td>本机口令</td><td><code>&lt;临时区&gt;\KEY.txt</code></td></tr>
+    <tr><td>解包输出</td><td><code>&lt;临时区&gt;\restore\&lt;包名&gt;</code></td></tr>
+    <tr><td>云端同步根</td><td><code>/DeepSeek Harness/DSH-Sync</code></td></tr>
+    <tr><td>云端旧包目录</td><td><code>/DeepSeek Harness/DSH-Backup</code></td></tr>
+  </table>
+  <p class="foot">插件版本 0.4.0 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
+</section>
+
+</main>
+</div>
+</body>
+</html>

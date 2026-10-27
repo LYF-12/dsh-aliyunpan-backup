@@ -43,6 +43,7 @@
   },
   "files": [
     "lib",
+    "docs",
     "cordis.patch.yml",
     "icon.svg",
     "README.md",
