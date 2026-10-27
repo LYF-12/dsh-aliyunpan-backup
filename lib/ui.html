@@ -86,9 +86,16 @@
       <span id="envHint" class="muted"></span>
     </div>
     <details style="margin-top:10px">
-      <summary class="hint" style="cursor:pointer">下载不了？填自定义地址（镜像 / 内网文件服务器）</summary>
+      <summary class="hint" style="cursor:pointer">下载不了？（自动试镜像 / 用本地压缩包 / 内网文件服务器）</summary>
+      <div class="hint" style="margin-top:8px">官方直连失败会自动依次试镜像 <code>ghfast.top</code>、<code>gh-proxy.com</code>（只对 github.com 地址生效），每个源重试 2 次，日志会逐条写清失败原因。</div>
       <div class="row" style="margin-top:8px">
-        <input type="text" id="envUrl" class="grow mono" placeholder="留空 = GitHub 官方发布（tickstep/aliyunpan）">
+        <input type="text" id="envLocalFile" class="grow mono" placeholder="本地 aliyunpan 压缩包（.zip / .tar.gz），或解压好的目录">
+        <button type="button" data-pick="file" data-target="envLocalFile" data-title="选择 aliyunpan 压缩包">选文件…</button>
+        <button type="button" data-pick="dir" data-target="envLocalFile" data-title="选择解压好的目录">选目录…</button>
+        <button id="btnEnvLocal">从本地安装</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="envUrl" class="grow mono" placeholder="自定义下载地址（留空 = GitHub 官方发布 tickstep/aliyunpan）">
       </div>
       <div class="hint">地址要指到压缩包本体（<code>.zip</code> 或 <code>.tar.gz</code>）。填过一次会记住；清空后保存即恢复官方源。</div>
     </details>
@@ -609,6 +616,7 @@ function fillEnv(data) {
       : '未找到 aliyunpan。同步功能需要它；点上面按钮即可自动装到 ' + (data.target || '插件数据目录\tools');
   $('btnEnvInstall').textContent = installed ? '重新下载 / 覆盖安装' : '下载并安装 aliyunpan';
   $('btnEnvInstall').disabled = running;
+  $('btnEnvLocal').disabled = running;
   $('envLog').textContent = (data.log && data.log.length ? data.log.join('\n') : '（暂无）');
   if (data.error) $('envHint').textContent = '失败：' + data.error;
   else if (running) $('envHint').textContent = '下载中，请稍候…';
@@ -646,7 +654,26 @@ async function installEnv() {
   }
 }
 
+async function installEnvLocal() {
+  const local = $('envLocalFile').value.trim();
+  if (!local) {
+    $('envHint').textContent = '先选一个本地压缩包或解压好的目录';
+    return;
+  }
+  $('btnEnvInstall').disabled = true;
+  $('btnEnvLocal').disabled = true;
+  $('envHint').textContent = '从本地安装…';
+  try {
+    await api('/provision/run', { method: 'POST', body: JSON.stringify({ local }) });
+    refreshEnv();
+  } catch (error) {
+    $('btnEnvLocal').disabled = false;
+    $('envHint').textContent = String(error.message || error);
+  }
+}
+
 $('btnEnvInstall').onclick = installEnv;
+$('btnEnvLocal').onclick = installEnvLocal;
 $('btnEnvOpen').onclick = async () => {
   try {
     const data = await api('/provision');

@@ -41,7 +41,15 @@
 2. 下载到插件数据目录并解压到 `<插件数据目录>/tools/`，记录 sha256；
 3. 跑一次 `aliyunpan --version` 确认能启动，然后把路径写进配置项 `aliyunpanExe`。
 
-不装服务、不写注册表、不需要管理员权限；失败时日志里留着原因和临时目录路径。下载不通（大陆网络常见）就在「下载不了？填自定义地址」里填镜像或内网文件服务器的压缩包直链，填过会记住。
+不装服务、不写注册表、不需要管理员权限；失败时日志里留着原因和临时目录路径。
+
+**下载不通怎么办（0.4.4 起）**：
+
+1. 官方直连失败后会自动依次试镜像 `ghfast.top`、`gh-proxy.com`（只对 github.com 地址生效），每个源重试 2 次；日志逐条写清失败原因，例如 `官方直连：fetch failed | UND_ERR_CONNECT_TIMEOUT Connect Timeout Error`。
+2. 还是不行，就用浏览器/迅雷把 release 里的 `aliyunpan-v*-windows-x64.zip` 下到本机，在配置页「下载不了？」里点「选文件…」，再点「从本地安装」——直接读本地 zip，不再联网。也接受解压好的目录（选目录…）或直接指到 `aliyunpan.exe`。
+3. 内网文件服务器也行：把 zip 直链填到自定义下载地址，填过会记住。
+
+常见故障：`fetch failed` 只说明网络层失败（DNS/连接/TLS），真正原因在日志的括号里；`HTTP 404` 是地址指错了版本的文件名。
 
 手动装也完全可以，两者等效：
 
@@ -242,7 +250,7 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 | `keyFile` | 空 = `staging\KEY.txt` | 本机口令文件 |
 | `restoreDir` | 空 = `staging\restore\<包名>` | 解包输出目录 |
 | `aliyunpanExe` | 空 = 自动探测 | CLI 路径（自举安装会写这里） |
-| `aliyunpanUrl` | 空 = GitHub 官方发布 | 自举安装的自定义下载地址（镜像 / 内网文件服务器，必须 http(s) 且指到压缩包） |
+| `aliyunpanUrl` | 空 = GitHub 官方发布 | 自举安装的自定义下载地址（镜像 / 内网文件服务器，必须 http(s) 且指到压缩包）；只想用本地包时留空，在配置页点「从本地安装」 |
 
 配置存放在 `~/.dsh/dsh-aliyunpan-backup/config.json`（可用 `DSH_AB_HOME` 改插件数据目录、`DSH_AB_CONFIG` 直接指定配置文件）。
 
@@ -264,7 +272,7 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 | `/sync/run` | POST | 开始同步（`{mode}`） |
 | `/sync/cancel` | POST | 取消同步 |
 | `/provision` | GET | aliyunpan 运行环境 + 安装状态与日志 |
-| `/provision/run` | POST | 自举安装（可带 `{url}` 覆盖下载地址，`{tag}` 指定版本） |
+| `/provision/run` | POST | 自举安装（`{url}` 覆盖下载地址、`{tag}` 指定版本、`{local}` 用本地 zip/目录安装） |
 | `/pick` | POST | 弹系统选择框：`{kind, initial, title}`（kind = `dir` 或 `file`）→ `{ok, path}`；取消/超时 409 |
 
 ---
@@ -315,7 +323,7 @@ node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口�
 | `lib/index.js` | 宿主半侧：14 条路由 + 配置读写 + 口令 + 系统选择框 |
 | `lib/client.js` | 设置卡片：同步上传 / 从机拉取 / 内嵌完整页 |
 | `lib/config.mjs` | 默认值、白名单、路径解析、`aliyunpan` 探测 |
-| `lib/provision.mjs` | 自举安装：查发布、挑包、下载校验、解压、试跑、写配置 |
+| `lib/provision.mjs` | 自举安装：查发布、挑包、下载（重试 + 镜像回退 + 本地包）、校验、解压、试跑、写配置 |
 | `lib/runner.mjs` | 解码任务：解析包路径、起子进程、日志/状态 |
 | `lib/syncplan.mjs` | 预演统计 |
 | `lib/syncrun.mjs` | 同步任务进程管理 |
@@ -327,6 +335,13 @@ node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口�
 ---
 
 ## 12. 变更记录
+
+### 0.4.4
+
+- **修「另一台机器装不上 aliyunpan」**：报错只有 `fetch failed` 一句话，看不出是 DNS、连接还是 TLS 挂的。现在 `describeError()` 会把 `error.cause` 链展开（如 `fetch failed | UND_ERR_CONNECT_TIMEOUT Connect Timeout Error`），日志逐条记录每个源的失败原因。
+- **下载不再一次失败就放弃**：源顺序「官方直连 → 镜像 ghfast.top → 镜像 gh-proxy.com」，每个源重试 2 次；4xx（除 408/429）不重试、直接换源。看门狗改成「45 秒没有新数据才算卡死 + 整体 10 分钟封顶」，慢速网络不会因为总耗时被误杀。
+- **新增本地安装**：配置页「下载不了？」里可以选一个本地 `.zip` / `.tar.gz`，或直接选解压好的目录，走 `/provision/run` 的 `{local}` 分支；同样会解压、`--version` 试跑、写 `aliyunpanExe`。浏览器/迅雷下载党不再被网络卡死。
+- 测试：`describeError` 嵌套 cause、`downloadSources` 对 github / 非 github / file:// 的源列表、本地目录安装（真机 e2e 装到临时 home 并跑通 v0.4.0）、路径不存在的拒绝、404 地址的换源与错误明细。
 
 ### 0.4.3
 
