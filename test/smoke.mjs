@@ -295,6 +295,27 @@ assert.equal(typeof updStatus.json.update.current, 'string', '/status exposes up
 const updBad = await call(base + '/update/run', { method: 'GET' });
 assert.equal(updBad.status, 405, '/update/run only accepts POST');
 
+// ---- 阿里云盘登录 ----
+for (const path of ['/login', '/login/start', '/login/confirm', '/login/cancel']) {
+	assert.ok(routes.has(base + path), 'login route ' + path);
+}
+const loginGet = await call(base + '/login');
+assert.equal(loginGet.status, 200, 'GET /login');
+assert.equal(typeof loginGet.json.running, 'boolean', 'login running flag');
+assert.equal(typeof loginGet.json.account, 'object', 'login account object');
+assert.equal(typeof loginGet.json.account.ok, 'boolean', 'account ok flag');
+assert.ok(Array.isArray(loginGet.json.log), 'login log array');
+// 机器上可能真的装了/登录了 aliyunpan（resolveExe 会扫 PATH），所以只校验形状
+if (loginGet.json.account.ok) assert.ok(String(loginGet.json.account.nick || '').length > 0, 'logged-in account carries a nick');
+else assert.ok(String(loginGet.json.account.reason || '').length > 0, 'account reason explains why');
+const loginStatus = await call(base + '/status');
+assert.equal(typeof loginStatus.json.login.account.ok, 'boolean', '/status exposes login summary');
+assert.equal((await call(base + '/login/confirm', { method: 'GET' })).status, 405, '/login/confirm only accepts POST');
+const noSession = await call(base + '/login/confirm', { method: 'POST', body: {} });
+assert.equal(noSession.status, 409, 'confirm without a running login -> 409');
+assert.equal((await call(base + '/login/cancel', { method: 'POST', body: {} })).status, 409, 'cancel without a running login -> 409');
+assert.equal(routes.size, 20, 'exactly 20 routes');
+
 const badRestore = await call(base + '/restore', { method: 'POST', body: { pkg: '/definitely/not/here' } });
 assert.equal(badRestore.status, 409, 'restore without a real package -> 409');
 assert.match(badRestore.json.error, /找不到包/);

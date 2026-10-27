@@ -46,7 +46,7 @@
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line);
            overflow-wrap: anywhere; word-break: break-word; }
   th { color: var(--muted); font-weight: 600; }
-  pre#log, pre#syncLog, pre#envLog, pre#updLog { margin: 0; padding: 12px; border-radius: 8px; background: #0d1117; color: #c9d1d9;
+  pre#log, pre#syncLog, pre#envLog, pre#updLog, pre#loginLog { margin: 0; padding: 12px; border-radius: 8px; background: #0d1117; color: #c9d1d9;
             max-height: 300px; overflow: auto; font-size: 12px; line-height: 1.45;
             white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; max-width: 100%; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
@@ -71,6 +71,31 @@
       <span id="lastResult" class="muted"></span>
     </div>
     <div id="err" class="err"></div>
+  </div>
+
+  <div class="card">
+    <h2>阿里云盘账号</h2>
+    <div class="row" style="justify-content:space-between">
+      <span id="loginState" class="badge"><span id="loginDot" class="dot"></span><span id="loginText">检查中…</span></span>
+      <span id="loginWho" class="mono muted"></span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnLoginStart" class="primary">登录阿里云盘</button>
+      <button id="btnLoginConfirm" disabled>我已扫码，继续</button>
+      <button id="btnLoginCancel" disabled>取消</button>
+    </div>
+    <div id="loginUrlWrap" style="display:none;margin-top:10px">
+      <div class="hint">在浏览器里打开这个链接完成授权（点「允许」）→ 页面会自动跳到扫码页，用手机阿里云盘 APP 扫码 → 回到这里点「我已扫码，继续」。</div>
+      <div class="row" style="margin-top:6px">
+        <input type="text" id="loginUrl" class="grow mono" readonly>
+        <a id="loginOpen" target="_blank" rel="noreferrer" style="padding:8px 14px;border:1px solid var(--line,#d8dbe2);border-radius:8px;text-decoration:none;color:inherit">打开链接</a>
+        <button id="btnLoginCopy">复制链接</button>
+      </div>
+      <div class="hint">链接 5 分钟有效；过期就点「取消」，再点「登录阿里云盘」重新拿一个。</div>
+    </div>
+    <div id="loginErr" class="err"></div>
+    <pre id="loginLog" style="margin-top:10px">（暂无）</pre>
+    <div class="hint">换机器能不能找到数据，取决于这里的账号：<b>两台机器必须是同一个阿里云盘账号</b>（UID 一致），否则云端目录看起来是空的。登录信息由 aliyunpan 自己保存在安装目录旁，插件不另存密码。</div>
   </div>
 
   <div class="card">
@@ -754,6 +779,80 @@ async function runPluginUpdate() {
 $('btnUpdCheck').onclick = () => refreshUpdate(true);
 $('btnUpdRun').onclick = runPluginUpdate;
 
+function fillLogin(data) {
+  const acc = data.account || {};
+  const running = !!data.running;
+  $('loginText').textContent = acc.ok ? '已登录' : running ? '登录中…' : '未登录';
+  $('loginDot').className = 'dot' + (acc.ok ? ' ok' : running ? '' : ' bad');
+  $('loginWho').textContent = acc.ok
+    ? (acc.nick || '?') + '（' + (acc.drive || '?') + '）' + (acc.uid ? ' UID ' + acc.uid.slice(0, 8) : '')
+    : (acc.reason || '还没登录');
+  $('btnLoginStart').disabled = running;
+  $('btnLoginConfirm').disabled = !running || !data.url;
+  $('btnLoginCancel').disabled = !running;
+  const showUrl = !!data.url;
+  $('loginUrlWrap').style.display = showUrl ? '' : 'none';
+  if (showUrl) {
+    $('loginUrl').value = data.url;
+    $('loginOpen').href = data.url;
+    $('loginOpen').onclick = () => {
+      const w = window.open(data.url, '_blank');
+      if (!w) $('loginErr').textContent = '浏览器拦了弹窗：点「复制链接」再粘到浏览器地址栏。';
+      return false;
+    };
+  }
+  $('loginErr').textContent = data.error || '';
+  $('loginLog').textContent = data.log && data.log.length ? data.log.slice(-60).join('\n') : '（暂无）';
+}
+
+async function refreshLogin() {
+  try {
+    fillLogin(await api('/login'));
+  } catch (error) {
+    $('loginErr').textContent = String(error.message || error);
+  }
+}
+
+let loginTimer = null;
+function watchLogin() {
+  if (loginTimer) clearTimeout(loginTimer);
+  loginTimer = setTimeout(async () => {
+    await refreshLogin();
+    let running = false;
+    try {
+      const data = await api('/login');
+      running = !!data.running;
+      fillLogin(data);
+    } catch {
+      running = false;
+    }
+    if (running) watchLogin();
+  }, 2000);
+}
+
+async function loginAction(path) {
+  $('loginErr').textContent = '';
+  try {
+    fillLogin(await api(path, { method: 'POST', body: '{}' }));
+    watchLogin();
+  } catch (error) {
+    $('loginErr').textContent = String(error.message || error);
+  }
+}
+
+$('btnLoginStart').onclick = () => loginAction('/login/start');
+$('btnLoginConfirm').onclick = () => loginAction('/login/confirm');
+$('btnLoginCancel').onclick = () => loginAction('/login/cancel');
+$('btnLoginCopy').onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($('loginUrl').value);
+    $('loginErr').textContent = '登录链接已复制';
+  } catch {
+    $('loginUrl').select();
+    $('loginErr').textContent = '复制失败，已全选，按 Ctrl+C';
+  }
+};
+
 $('btnEnvInstall').onclick = installEnv;
 $('btnEnvLocal').onclick = installEnvLocal;
 $('btnEnvOpen').onclick = async () => {
@@ -812,6 +911,7 @@ loadKey();
 refresh();
 refreshSync();
 refreshEnv();
+refreshLogin();
 refreshUpdate();
 </script>
 </body>

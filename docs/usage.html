@@ -98,7 +98,7 @@ svg{max-width:100%;height:auto;display:block;margin:0 auto}
 <header class="hero">
   <h1>DSH 云同步 · 使用说明</h1>
   <p>把 DeepSeek Harness 的会话、附件、工作区索引、任务板，逐目录增量镜像到阿里云盘；换台电脑拉回来就能接着用。</p>
-  <div class="tags"><span>插件版本 0.5.0</span><span>同步主链路</span><span>插件内更新</span><span>附带包解码器</span><span>一主多从</span></div>
+  <div class="tags"><span>插件版本 0.5.1</span><span>同步主链路</span><span>插件内更新</span><span>附带包解码器</span><span>一主多从</span></div>
 </header>
 
 <section id="s1">
@@ -167,15 +167,32 @@ svg{max-width:100%;height:auto;display:block;margin:0 auto}
   </div>
   <p><b>自举安装</b>：插件找不到 CLI 时，卡片和配置页都会出现「下载 aliyunpan」按钮。点一下就完成：查官方 release → 按平台/架构挑包 → 下载校验 → 解压到插件数据目录 <code>tools\</code> → 跑 <code>--version</code> 试跑 → 把路径写进配置。免安装、不写注册表、不要管理员权限。下载不通（大陆网络常见）分三层兜底：① 官方直连失败会自动依次试镜像 <code>ghfast.top</code>、<code>gh-proxy.com</code>（只对 github.com 地址生效），每个源重试 2 次，日志逐条写清失败原因（如 <code>UND_ERR_CONNECT_TIMEOUT</code>）；② 用浏览器/迅雷下好 zip，在配置页「下载不了？」里点「选文件…」→「从本地安装」，完全离线；③ 内网文件服务器就把 zip 直链填进「自定义地址」。</p>
   <p>也可以手动装：解压到任意目录，或放进 <code>PATH</code>（插件会自动在 PATH 里找）。</p>
-<pre><code>aliyunpan login        <span class="c"># 扫码 / 浏览器授权，凭据存本机</span>
+<pre><code>aliyunpan who          <span class="c"># 看当前登录的账号（UID / 昵称 / 网盘）</span>
 aliyunpan ls "/"       <span class="c"># 能列目录就算通了</span></code></pre>
+<p>登录不用敲命令行，见下一节「2.2 登录阿里云盘」。</p>
   <div class="warn"><b>注意</b>不要把 <code>aliyunpan</code> 装在需要管理员权限才能读的目录，否则插件以普通用户启动子进程时会找不到。</div>
 
-  <h3>2.2 装插件</h3>
+  <h3>2.2 登录阿里云盘（0.5.1 起，页面里点）</h3>
+  <p>两台电脑<b>必须是同一个阿里云盘账号</b>。不是的话，从机看到云端就跟空的一样（旧版本的直接后果是 11 个根全「云端还没有这个目录，跳过」）。</p>
+  <div class="pipe">
+    <span class="node">配置页「阿里云盘账号」卡 → 登录阿里云盘</span><span class="arrow">→</span>
+    <span class="node">浏览器点「允许」+ 手机 APP 扫码</span><span class="arrow">→</span>
+    <span class="node">我已扫码，继续</span>
+  </div>
+  <ol>
+    <li>打开完整配置页，最上面的「阿里云盘账号」卡显示<b>已登录</b>（昵称 + UID 前 8 位）或<b>未登录</b>。</li>
+    <li>点〔登录阿里云盘〕，等几秒，卡里出现授权链接（<code>https://openapi.alipan.com/oauth/authorize…</code>）。</li>
+    <li>点〔打开链接〕（拦弹窗就用〔复制链接〕粘到浏览器）→ 点「允许」→ 跳到二维码页 → 手机阿里云盘 APP 扫码。</li>
+    <li>回到配置页点〔我已扫码，继续〕（等于给 <code>aliyunpan login</code> 敲回车）→ 状态变「已登录」。</li>
+    <li>链接 5 分钟有效。过期就〔取消〕，再点一次〔登录阿里云盘〕。</li>
+  </ol>
+  <div class="warn"><b>失败也返回 0</b><code>aliyunpan login</code> 失败时退出码也是 0，所以插件靠两件事判断成功：输出里出现「登录成功」，或登录后再跑 <code>aliyunpan who</code> 能拿到 UID。都没拿到就报「登录没有完成」。</div>
+
+  <h3>2.3 装插件</h3>
 <pre><code>dsh plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup</code></pre>
   <p>命令行安装<b>不会</b>自动登记 bundle：打开 <code>~/.dsh/profiles/desktop/package.json</code>，确认 <code>dsh.profile.bundles</code> 数组里有 <code>dsh-aliyunpan-backup</code>，没有就手动加一行。装完<b>重启 DSH</b>。</p>
 
-  <h3>2.3 认识界面</h3>
+  <h3>2.4 认识界面</h3>
   <p>设置 → 插件 → 本插件是一张卡片：状态、上次结果、四个按钮；缺 <code>aliyunpan</code> 时多一个「下载 aliyunpan」。</p>
   <div class="pipe">
     <span class="node host">同步上传</span><span class="arrow">·</span>
@@ -183,7 +200,8 @@ aliyunpan ls "/"       <span class="c"># 能列目录就算通了</span></code><
     <span class="node">刷新</span><span class="arrow">·</span>
     <span class="node">打开完整配置页</span>
   </div>
-  <p>完整配置页里八张卡：<b>运行环境</b>、<b>插件更新</b>、<b>同步</b>、<b>解码本地包</b>、<b>口令</b>、<b>路径配置</b>、<b>解码日志</b>。第一次用建议先开完整配置页做设置。</p>
+  <p>完整配置页里九张卡：<b>阿里云盘账号</b>、<b>运行环境</b>、<b>插件更新</b>、<b>同步</b>、<b>解码本地包</b>、<b>口令</b>、<b>路径配置</b>、<b>解码日志</b>。第一次用建议先开完整配置页做设置。</p>
+  <p>插件卡片上也会多一行账号状态；未登录时按钮里多一个〔去登录〕（直接就地展开配置页）。</p>
   <p>卡片上的状态徽标只反映<b>同步</b>这条链路：<code>未同步</code> → <code>同步中</code> → <code>已上传</code> / <code>已拉取</code>。<b>看到「未同步」不等于插件坏了</b>，点一次「同步上传」就开始。缺 CLI 时徽标是「缺 aliyunpan」，右侧会多一个「下载 aliyunpan」。</p>
   <div class="ok"><b>路径不用手打</b>配置页里每个路径框右边都有「浏览…」，点开是 Windows 原生选择框，选完自动回填。也可以继续手填。</div>
 </section>
@@ -356,7 +374,7 @@ node lib/scripts/syncd.mjs --mode download --prune --strict
 node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --verify-only
 node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --out &lt;目录&gt;</code></pre>
 
-  <h3>8.3 HTTP 路由（14 条，仅 loopback）</h3>
+  <h3>8.3 HTTP 路由（20 条，仅 loopback）</h3>
   <table>
     <tr><th>路由</th><th>方法</th><th>说明</th></tr>
     <tr><td><code>/api/dsh-aliyunpan-backup/ui</code></td><td>GET</td><td>完整配置页</td></tr>
@@ -373,11 +391,20 @@ node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --ou
     <tr><td><code>/sync/plan</code></td><td>GET</td><td>预演统计</td></tr>
     <tr><td><code>/sync/run</code></td><td>POST</td><td>开始同步</td></tr>
     <tr><td><code>/sync/cancel</code></td><td>POST</td><td>取消同步</td></tr>
+    <tr><td><code>/update</code></td><td>GET</td><td>自更新状态；<code>?check=1</code> 顺手查一次上游</td></tr>
+    <tr><td><code>/update/run</code></td><td>POST</td><td>开始更新，<code>{profile}</code> 可选</td></tr>
+    <tr><td><code>/login</code></td><td>GET</td><td>账号状态 + 登录进度（<code>phase</code> / 授权 <code>url</code> / 日志）</td></tr>
+    <tr><td><code>/login/start</code></td><td>POST</td><td>起后台 <code>aliyunpan login</code></td></tr>
+    <tr><td><code>/login/confirm</code></td><td>POST</td><td>授权 + 扫码之后敲回车</td></tr>
+    <tr><td><code>/login/cancel</code></td><td>POST</td><td>取消登录</td></tr>
   </table>
 </section>
 
 <section id="s9">
   <h2><span class="n">9</span>常见问题</h2>
+
+  <h3>从机拉取，11 个根全是「云端还没有这个目录/文件」</h3>
+  <p>先看配置页「阿里云盘账号」：<b>是不是已登录、昵称和 UID 与主机一致</b>。没登录时 <code>aliyunpan download</code> 会 panic，旧版本把它当成「云端没有」静默跳过，于是 files=0 却 failed=0（0.5.1 起直接 <code>exit 4</code> 并提示先登录）。账号没问题，再核对 <code>syncDir</code> 是否与主机一致、主机是不是真上传过（<code>aliyunpan ls "/DeepSeek Harness/DSH-Sync"</code>）。</p>
 
   <h3>上传很慢 / 一直 0 个文件</h3>
   <p>0 个文件 = 索引显示无变化。想强制重传，删掉插件数据目录下的 <code>sync-index.json</code> 再同步（会走全量覆盖）。慢通常是云盘限速，不是插件。</p>
@@ -417,7 +444,7 @@ node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --ou
     <tr><td>云端同步根</td><td><code>/DeepSeek Harness/DSH-Sync</code></td></tr>
     <tr><td>云端旧包目录</td><td><code>/DeepSeek Harness/DSH-Backup</code></td></tr>
   </table>
-  <p class="foot">插件版本 0.5.0 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
+  <p class="foot">插件版本 0.5.1 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
 </section>
 
 </main>

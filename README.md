@@ -77,7 +77,19 @@ dsh plugin --profile desktop add link:D:\Code\deepseek\cs\dsh-aliyunpan-backup
 
 装完**重启 DSH**，打开 设置 → 插件，找到本插件即可。
 
-### 2.3 更新插件（0.5.0 起，插件内一键）
+### 2.3 登录阿里云盘（0.5.1 起，页面里点，不用开终端）
+
+两台机器**必须登录同一个阿里云盘账号**，否则另一台看云端就跟空的一样。
+
+1. 打开配置页（插件卡〔打开完整配置页〕），最上面的「阿里云盘账号」卡会显示已登录的昵称/UID 或「未登录」。
+2. 点〔登录阿里云盘〕→ 等几秒，卡片里出现授权链接（`https://openapi.alipan.com/oauth/authorize…`）。
+3. 点〔打开链接〕（或〔复制链接〕粘到浏览器）→ 点「允许」→ 自动跳到二维码页 → 手机阿里云盘 APP 扫码确认。
+4. 回到配置页点〔我已扫码，继续〕（等于给 `aliyunpan login` 敲了个回车）→ 状态变「已登录」，显示昵称与 UID 前 8 位。
+5. 链接 5 分钟有效；过期就〔取消〕再重新〔登录阿里云盘〕。
+
+> 命令行等价：`aliyunpan login`（同样要浏览器授权 + 扫码 + 回车），`aliyunpan who` 看当前账号。
+
+### 2.4 更新插件（0.5.0 起，插件内一键）
 
 卡片的按钮行会有「**更新插件到 x.y.z**」（有新版本时）或「检查插件更新」（已最新时）；完整配置页里还有一张「插件更新」卡，能看当前版本、磁盘上的版本、上游版本、安装位置和更新日志。
 
@@ -115,7 +127,7 @@ dsh plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup   # 等同�
 | 刷新 | 重新读状态/日志 |
 | 打开完整配置页 / 复制配置页地址 | 卡片里内嵌完整页面；宿主拦弹窗时用复制地址 |
 | 下载 aliyunpan | **只在找不到 exe 时出现**，一键自举安装（见 §2.1） |
-| 更新插件到 x / 检查插件更新 | 有新版本时显示前者，点一下自更新（见 §2.3）；更新后需重启 DSH |
+| 更新插件到 x / 检查插件更新 | 有新版本时显示前者，点一下自更新（见 §2.4）；更新后需重启 DSH |
 
 完整配置页（`/api/dsh-aliyunpan-backup/ui`）八张卡：运行环境、插件更新、同步、解码本地包、口令、路径配置、解码日志；「运行环境」卡显示 aliyunpan 是否就绪、版本、安装路径、安装进度日志，以及自定义下载地址。
 
@@ -282,7 +294,7 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 
 ---
 
-## 8. HTTP 路由（16 条，全部 exact + 仅 loopback）
+## 8. HTTP 路由（20 条，全部 exact + 仅 loopback）
 
 | 路由 | 方法 | 说明 |
 | --- | --- | --- |
@@ -302,6 +314,10 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 | `/pick` | POST | 弹系统选择框：`{kind, initial, title}`（kind = `dir` 或 `file`）→ `{ok, path}`；取消/超时 409 |
 | `/update` | GET | 自更新状态；`?check=1` 会去查一次上游（不传时首次访问也会顺手查一次） |
 | `/update/run` | POST | 开始更新，`{profile}` 可选；已在更新时 409 |
+| `/login` | GET | 阿里云盘账号状态（`account.ok/nick/uid/drive`）+ 登录进度（`phase`、授权 `url`、日志） |
+| `/login/start` | POST | 起后台 `aliyunpan login`（授权链接稍后出现在 `/login.url`）；已在登录时 409 |
+| `/login/confirm` | POST | 往登录子进程敲回车（浏览器授权 + APP 扫码之后）；没拿到链接时 409 |
+| `/login/cancel` | POST | 取消登录；没有进行中的会话时 409 |
 
 ---
 
@@ -331,6 +347,8 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 
 **Q：解包会不会覆盖正在用的数据？** 不会。解到独立目录，自己挑。
 
+**Q：另一台机器点「从机拉取」，11 个根全是「云端还没有这个目录/文件，跳过」？** 先看配置页「阿里云盘账号」是不是「已登录」且昵称/UID 与主机一致 —— 没登录时 `aliyunpan download` 会 panic，旧版本会把它当成「云端没有」静默跳过（0.5.1 起直接报错 `exit 4`）。账号没问题再核对同步目录名（`syncDir`）和主机是否真的上传过。
+
 **Q：还要备份加密包吗？** 0.4.0 起不做打包上传了。要异地留档：同步一份明文，或自行打包后传到云盘再解码。
 
 ---
@@ -340,7 +358,7 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 ```powershell
 node --check lib/index.js      # 宿主半侧
 node --check lib/client.js     # 浏览器半侧
-node test/smoke.mjs            # 路由/配置/UI/客户端组件断言（14 条路由 + 装配文件根）
+node test/smoke.mjs            # 路由/配置/UI/客户端组件断言（20 条路由 + 装配文件根 + 登录接口）
 node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口令 → 解包 → 逐字节比对
 ```
 
@@ -363,6 +381,14 @@ node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口�
 ---
 
 ## 12. 变更记录
+
+### 0.5.1
+
+- **登录卡**（另一台机器「已拉取，没效果」的直接原因）：那台机器没登录阿里云盘，`aliyunpan download` 直接 panic（`invalid memory address`），旧代码把「命令挂了」当成「云端没有这个目录」静默跳过，于是 11 个根全打印「云端还没有这个目录，跳过」，`files=0 failed=0` —— 看上去像同步没事，其实一个字节都没动。
+- 新增 `lib/login.mjs`：把交互式 `aliyunpan login` 包成「后台子进程 + 页面显示授权链接 + 一键回车」。配置页新增「阿里云盘账号」卡：已登录/未登录、昵称与 UID 前 8 位、三个按钮〔登录阿里云盘〕〔我已扫码，继续〕〔取消〕；授权只能走 `openapi.alipan.com` 那条链接（浏览器点「允许」→ 手机 APP 扫码 → 回车）。
+- 坑：`aliyunpan login` **失败也返回 0**，所以成功判定只能看输出里的「登录成功」或登录后 `aliyunpan who` 是否 ok；授权链接大约启动 6 秒后才打印，没拿到链接时点「继续」会被拒绝。
+- `syncd.mjs` 加登录前置检查：未登录直接 `[fail] 这台机器还没有登录阿里云盘：…` + 登录命令提示、`exit 4`，不再假报成功；下载没产出文件时区分「云端确实没有」（`指定目录不存在`，正常跳过）与「命令失败/panic」（打印输出尾巴 + 提示）；全部根都空时打印三段诊断（账号是否一致 / 主机是否真传上去 / 云端目录名是否一致）。注意 `aliyunpan ls` 对不存在的目录**退出码仍是 0**，不能用退出码判断。
+- 路由 16 → 20（`/login`、`/login/start`、`/login/confirm`、`/login/cancel`）；设置页插件卡多一行账号状态，未登录时多一个〔去登录〕按钮（直接展开内嵌配置页）。
 
 ### 0.5.0
 
