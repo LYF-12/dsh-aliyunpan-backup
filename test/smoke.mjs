@@ -314,7 +314,81 @@ assert.equal((await call(base + '/login/confirm', { method: 'GET' })).status, 40
 const noSession = await call(base + '/login/confirm', { method: 'POST', body: {} });
 assert.equal(noSession.status, 409, 'confirm without a running login -> 409');
 assert.equal((await call(base + '/login/cancel', { method: 'POST', body: {} })).status, 409, 'cancel without a running login -> 409');
-assert.equal(routes.size, 20, 'exactly 20 routes');
+assert.equal(routes.size, 21, 'exactly 21 routes');
+
+// ---- 0.6.0：同步日志 / 看门狗 / 跨重启任务态 ----
+assert.ok(routes.has(base + '/sync/log'), 'sync log route exists');
+const syncLogGet = await call(base + '/sync/log');
+assert.equal(syncLogGet.status, 200, 'GET /sync/log');
+for (const key of ['ok', 'path', 'lines', 'text', 'bytes', 'state']) {
+	assert.ok(Object.prototype.hasOwnProperty.call(syncLogGet.json, key), 'sync log field ' + key);
+}
+assert.equal(typeof syncLogGet.json.text, 'string', 'log text is a string');
+assert.equal(typeof syncLogGet.json.state.running, 'boolean', 'log carries sync state');
+assert.equal((await call(base + '/sync/log', { method: 'POST' })).status, 405, '/sync/log only accepts GET');
+assert.ok((await call(base + '/sync/log', { url: base + '/sync/log?lines=99999' })).json.lines <= 2000, 'lines clamped to 2000');
+assert.equal(typeof (await call(base + '/sync/log', { url: base + '/sync/log?lines=1' })).json.lines, 'number', 'lines is a number');
+
+const syncGet = await call(base + '/sync');
+assert.equal(syncGet.status, 200, 'GET /sync');
+assert.equal(typeof syncGet.json.timeout.idleMinutes, 'number', '/sync exposes idle timeout');
+assert.equal(typeof syncGet.json.timeout.maxMinutes, 'number', '/sync exposes max timeout');
+assert.ok(String(syncGet.json.state.jobPath || '').endsWith('sync-job.json'), '/sync exposes jobPath');
+assert.ok(Array.isArray(syncGet.json.log.lines), '/sync still carries a log tail');
+
+const sr = await import(new URL('../lib/syncrun.mjs', import.meta.url).href);
+assert.equal(typeof sr.judgeStall, 'function', 'judgeStall exported');
+assert.deepEqual(
+	sr.judgeStall({ now: 1000 * 1000, startedMs: 0, lastOutputMs: 1000 * 1000 - 700 * 1000, idleMs: 600 * 1000, hardMs: 3600 * 1000 }),
+	{ stalled: true, reason: 'idle' },
+	'no output for 700s with a 600s idle limit -> idle stall',
+);
+assert.deepEqual(
+	sr.judgeStall({ now: 1000 * 1000, startedMs: 0, lastOutputMs: 1000 * 1000 - 10 * 1000, idleMs: 600 * 1000, hardMs: 3600 * 1000 }),
+	{ stalled: false, reason: '' },
+	'fresh output keeps a job alive',
+);
+assert.deepEqual(
+	sr.judgeStall({ now: 4000 * 1000, startedMs: 0, lastOutputMs: 4000 * 1000 - 5 * 1000, idleMs: 600 * 1000, hardMs: 3600 * 1000 }),
+	{ stalled: true, reason: 'total' },
+	'running past the hard limit -> total stall even with fresh output',
+);
+assert.deepEqual(
+	sr.judgeStall({ now: 4000 * 1000, startedMs: 0, lastOutputMs: 4000 * 1000 - 5 * 1000, idleMs: 0, hardMs: 0 }),
+	{ stalled: false, reason: '' },
+	'0 disables both limits',
+);
+
+// 宿主重启后残留的 running 任务：pid 已死 -> 标记 interrupted，绝不再报「同步中」
+fs.writeFileSync(sr.syncJobPath(), JSON.stringify({
+	phase: 'running',
+	mode: 'upload',
+	startedMs: Date.now() - 60_000,
+	startedAt: new Date().toISOString(),
+	pid: 999999,
+}));
+const sr2 = await import(new URL('../lib/syncrun.mjs?fresh=' + Date.now(), import.meta.url).href);
+const deadState = sr2.syncState();
+assert.equal(deadState.running, false, 'dead job is not running');
+assert.equal(deadState.orphan, null, 'dead pid is not treated as orphan');
+const rewritten = JSON.parse(fs.readFileSync(sr2.syncJobPath(), 'utf8'));
+assert.equal(rewritten.phase, 'interrupted', 'dead running job rewritten to interrupted');
+assert.match(String(rewritten.result || ''), /中断/, 'interrupted job explains itself');
+
+// pid 还活着 -> 认作遗留任务（orphan），卡片给「结束任务」按钮
+fs.writeFileSync(sr.syncJobPath(), JSON.stringify({
+	phase: 'running',
+	mode: 'upload',
+	startedMs: Date.now() - 60_000,
+	startedAt: new Date().toISOString(),
+	pid: process.pid,
+}));
+const sr3 = await import(new URL('../lib/syncrun.mjs?fresh2=' + Date.now(), import.meta.url).href);
+const liveState = sr3.syncState();
+assert.equal(liveState.running, false, 'orphan is not reported as running');
+assert.ok(liveState.orphan && liveState.orphan.pid === process.pid, 'alive pid becomes an orphan warning');
+assert.equal((await call(base + '/sync/cancel', { method: 'POST', body: {} })).status, 200, 'cancel still answers for a stale job');
+fs.rmSync(sr.syncJobPath(), { force: true });
 
 const badRestore = await call(base + '/restore', { method: 'POST', body: { pkg: '/definitely/not/here' } });
 assert.equal(badRestore.status, 409, 'restore without a real package -> 409');

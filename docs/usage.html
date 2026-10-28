@@ -98,7 +98,7 @@ svg{max-width:100%;height:auto;display:block;margin:0 auto}
 <header class="hero">
   <h1>DSH 云同步 · 使用说明</h1>
   <p>把 DeepSeek Harness 的会话、附件、工作区索引、任务板，逐目录增量镜像到阿里云盘；换台电脑拉回来就能接着用。</p>
-  <div class="tags"><span>插件版本 0.5.4</span>
+  <div class="tags"><span>插件版本 0.6.0</span>
   <span>密钥信封</span><span>同步主链路</span><span>插件内更新</span><span>附带包解码器</span><span>一主多从</span></div>
 </header>
 
@@ -244,12 +244,12 @@ node lib/scripts/syncd.mjs --mode download   <span class="c"># 下载密文并�
 
 <section id="s4">
   <h2><span class="n">4</span>拉取：云端 → 本机</h2>
-  <p class="lead">把云端的改动拉回本机。默认只增不删，覆盖同名文件。</p>
+  <p class="lead">把云端的改动拉回本机。默认只增不删；同名文件只在「云端这份更大」时才覆盖，本机更完整的那份永远保留。</p>
 
   <div class="flow">
     <div class="step"><h4>先退出 DSH</h4><p>正在运行的 DSH 握着会话文件与锁文件，Windows 上写入会被拒。要么退出应用，要么只拉不覆盖（默认只增不删仍可能碰到同名文件）。</p></div>
     <div class="step"><h4>点「从机拉取」</h4><p>切到 download 模式执行。先把云端目录下到暂存目录 <code>syncDlDir</code>（留空 = 插件数据目录下 <code>sync-dl</code>），再由插件逐文件镜像进 <code>~/.dsh</code>。</p></div>
-    <div class="step"><h4>看结果</h4><p><code>OK 下载 N 更新 N 未变 N</code>。默认不删本机多余文件；勾了 <b>拉取时删除本机多余文件</b> 才是严格镜像（会删）。</p></div>
+    <div class="step"><h4>看结果</h4><p><code>OK 下载 N 更新 N 未变 N 保留本机旧版 N</code>。默认不删本机文件；勾了 <b>严格镜像</b> 时，本机多余文件也是<b>挪进回收站</b>而不是删掉。</p></div>
   </div>
 
   <div class="warn"><b>为什么不让 CLI 直接写 ~/.dsh</b>CLI 会自己多建一层 <code>DeepSeek Harness\DSH-Sync\</code> 目录，路径就错了；而且只有逐文件比对才能做到只写变化的部分。所以中间加了一层暂存目录。</div>
@@ -264,8 +264,9 @@ node lib/scripts/syncd.mjs --mode download   <span class="c"># 下载密文并�
   </table>
   <p class="note-inline">多个云端 profile 不做合并：往同一个本机文件写两份会互相覆盖，宁可各建各的目录。</p>
 
-  <h3>严格镜像（可选）</h3>
-  <p>勾选 <code>syncPrune</code>（配置键 <code>syncPrune: true</code>）后，本机比云端多出来的文件会被删除，两边完全一致。适合「从机只读，不产生自己的数据」的用法。<b>第一次开之前先备份。</b></p>
+  <h3>严格镜像（可选，0.6.0 起只进回收站）</h3>
+  <p>勾选 <code>syncPrune</code>（配置键 <code>syncPrune: true</code>）后，本机比云端多出来的文件会离开原位置，两边看起来一致。区别是：0.6.0 起这些文件被<b>挪进回收站</b> <code>&lt;插件数据目录&gt;\trash\&lt;时间戳&gt;\pruned-&lt;目录&gt;\</code>，只保留最近 3 批，随时能手动拿回来。</p>
+  <p>还有一道闸门：如果这次云端一个文件都没取到（下载失败、云端目录空），严格镜像<b>整段跳过</b>并打 <code>[warn]</code> —— 免得把本机清空。</p>
 
   <h3>工作区路径重映射（0.5.4 起）</h3>
   <p><code>storages/workspace.json</code> 把工作区记成<b>绝对路径</b>（<code>D:\Code\deepseek\cs</code>）。换台电脑这些目录往往不存在，DSH 打开时工作区是空的。所以在拉取结束（且本次含 <code>storages</code>）后会自动改：</p>
@@ -284,6 +285,29 @@ node lib/scripts/syncd.mjs --mode download   <span class="c"># 下载密文并�
 
   <h3>不同步的 profile</h3>
   <p><code>syncProfileExclude</code> 填 <code>abtest, tmp</code> 这样的名字（逗号/分号/空格分隔，最多 20 个），这些 profile 的装配文件不会被上传，测试 profile 也就不会在别的机器上多建一个目录。</p>
+
+  <h3>拉取不会弄丢本机记录（0.6.0）</h3>
+  <table>
+    <tr><th>场景</th><th>以前</th><th>现在</th></tr>
+    <tr><td>本机会话比云端长（DSH 还在追加写）</td><td>被云端旧版盖掉，记录变短</td><td>本机更大就不覆盖，云端版本进回收站</td></tr>
+    <tr><td><code>storages/workspace.json</code></td><td>整个覆盖，本机会话从界面消失</td><td>合并：云端独有工作区补入、会话 id 与置顶取并集，改前备份 <code>.bak-&lt;时间戳&gt;</code></td></tr>
+    <tr><td>严格镜像删本机文件</td><td><code>unlink</code> 直接删</td><td>挪进 <code>trash\</code>，保留 3 批</td></tr>
+  </table>
+  <pre><code><span class="c"># 冲突时日志长这样</span>
+ [conflict] 本机这份更新，保留本机：sessions/abc/session.v4.jsonl.zstd（云端旧版放进回收站）
+ [warn] 有 3 个文件本机版本更新，已全部保留本机（云端旧版在回收站）</code></pre>
+</section>
+
+<section id="s4b">
+  <h2><span class="n">4.5</span>同步卡住了怎么办</h2>
+  <p class="lead">0.6.0 起同步不会无限期「同步中」：有看门狗、有日志、有孤儿进程识别。</p>
+  <table>
+    <tr><th>现象</th><th>原因</th><th>怎么办</th></tr>
+    <tr><td>徽标「同步中」，时间在涨但日志不动</td><td>子进程无输出</td><td>超过 <code>syncIdleMinutes</code>（默认 10 分钟）自动中止，卡片显示 <code>stalled: idle</code>；日志里能看到最后一条输出</td></tr>
+    <tr><td>一直在跑但每步都慢</td><td>总量太大</td><td><code>syncMaxMinutes</code>（默认 180 分钟）封顶；超时后中间结果会保留，重跑只补没传完的</td></tr>
+    <tr><td>DSH 重启后仍显示「同步中」</td><td>状态文件停在 running，进程早没了</td><td>自动识别 <code>interrupted</code>，卡片提示「上次的同步进程（pid N）可能还卡着」+「结束任务」按钮</td></tr>
+  </table>
+  <p>排查顺序：卡片「运行日志」→ 加载更多 → 复制日志；再看配置页「运行日志」折叠区里的原始行。日志每行都带时间戳，同步中还会显示「已运行 N · 最近输出 M 前」。</p>
 </section>
 
 <section id="s5">
@@ -490,7 +514,7 @@ node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --ou
     <tr><td>云端同步根</td><td><code>/DeepSeek Harness/DSH-Sync</code></td></tr>
     <tr><td>云端旧包目录</td><td><code>/DeepSeek Harness/DSH-Backup</code></td></tr>
   </table>
-  <p class="foot">插件版本 0.5.4 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
+  <p class="foot">插件版本 0.6.0 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
 </section>
 
 </main>

@@ -120,7 +120,9 @@ dsh plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup   # 等同�
 
 ## 3. 界面
 
-设置 → 插件 → 本插件是一张卡片：状态徽标、上次结果、几个按钮。徽标口径只有同步：**未同步 / 同步中 / 已上传 / 已拉取**（缺 exe 时显示「缺 aliyunpan」）。
+设置 → 插件 → 本插件是一张卡片：状态徽标、上次结果、几个按钮、一块可展开的**运行日志**。徽标口径只有同步：**未同步 / 同步中 / 已上传 / 已拉取**（缺 exe 时显示「缺 aliyunpan」）。
+
+同步中还会显示「已运行 3 分 12 秒 · 最近输出 12 秒前」；只要子进程卡住没输出，超过「无输出超时」就会自动中止并把原因写进日志 —— 不会出现「一直同步中」下不来的状态。上次的进程已经不在了但状态文件还停在 running 时，卡片会提示「上次的同步进程（pid N）可能还卡着」，并给一个「结束任务」按钮。
 
 | 按钮 | 作用 |
 | --- | --- |
@@ -130,8 +132,13 @@ dsh plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup   # 等同�
 | 打开完整配置页 / 复制配置页地址 | 卡片里内嵌完整页面；宿主拦弹窗时用复制地址 |
 | 下载 aliyunpan | **只在找不到 exe 时出现**，一键自举安装（见 §2.1） |
 | 更新插件到 x / 检查插件更新 | 有新版本时显示前者，点一下自更新（见 §2.4）；更新后需重启 DSH |
+| 运行日志 / 收起日志 | 展开卡片里的日志面板（默认 200 行，可加载更多、一键复制）；排查问题先看这里 |
 
-完整配置页（`/api/dsh-aliyunpan-backup/ui`）八张卡：阿里云盘账号、运行环境、插件更新、同步、解码本地包、口令、路径配置、解码日志；「运行环境」卡显示 aliyunpan 是否就绪、版本、安装路径、安装进度日志，以及自定义下载地址。
+完整配置页（`/api/dsh-aliyunpan-backup/ui`）八张卡：阿里云盘账号、运行环境、插件更新、同步、解码本地包、口令、路径配置、解码日志。
+
+**默认只显示高频卡**（账号、同步），其余（运行环境 / 插件更新 / 解码本地包 / 口令 / 路径配置 / 解码日志）收在头部「显示全部设置」开关后面；同步卡的低频字段（机器标识、互斥窗口、装配 profile、暂存目录、路径映射、超时保护）收在「高级设置」折叠区，日志收在「运行日志」折叠区。开关状态记在 localStorage。页面在窄侧栏（500 px 左右）也不会横向溢出。
+
+「运行环境」卡显示 aliyunpan 是否就绪、版本、安装路径、安装进度日志，以及自定义下载地址。
 
 所有路径输入框旁边都有按钮：
 
@@ -292,6 +299,30 @@ node lib/scripts/syncd.mjs --mode download --prune
 
 输出末行固定是 `SYNC RESULT: mode=... roots=N files=N failed=N`。
 
+### 5.9 拉取不会弄丢本机记录（0.6.0）
+
+以前拉取是「云端有什么就盖什么」，三个地方会吃掉本机数据，现在都堵上了：
+
+| 场景 | 旧行为 | 现在 |
+| --- | --- | --- |
+| 本机会话比云端长（DSH 还在追加写，size 变大） | 被云端旧版覆盖，记录变短 | **本机文件更大就不覆盖**，云端版本只放进回收站 |
+| `storages/workspace.json` 被覆盖 | 本机原有会话从界面「消失」（文件还在） | **合并**：云端独有工作区补进来、会话 id 取并集、置顶取并集，改前备份 `workspace.json.bak-<时间戳>` |
+| 严格镜像（`syncPrune`）删本机多余文件 | 直接删除，找不回 | **只挪进回收站** `<插件目录>\trash\<时间戳>\pruned-<目录>\`，保留最近 3 批 |
+
+额外的两条硬保护：
+
+- 云端这次一个文件都没取到（下载失败 / 云端目录空）时，严格镜像**整段跳过**并打 `[warn] 云端这次没有取到任何文件，为防误删本机数据，已跳过严格镜像删除`。
+- 上传侧的云端删除同理：本机这次读到 0 个文件、或要删的比留下的还多时，只警告不删云端；确认无误要重跑并加 `--force`。
+
+`storages/session_projcache` 是本机会话归属缓存，云端的不覆盖已有文件。
+
+冲突时日志长这样（前 20 条逐条打印，末尾给总数）：
+
+```text
+[conflict] 本机这份更新，保留本机：sessions/abc/session.v4.jsonl.zstd（云端旧版放进回收站）
+[warn] 有 3 个文件本机版本更新，已全部保留本机（云端旧版在回收站）
+```
+
 ---
 
 ## 6. 解码本地包
@@ -353,7 +384,9 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 | `syncMachine` | 空 = 计算机名 | 锁与留痕用的机器标识 |
 | `syncLockMinutes` | `60` | 其它机器活动窗口；0 = 不检查 |
 | `syncDlDir` | 空 = 插件目录 `sync-dl` | 拉取暂存目录 |
-| `syncPrune` | `false` | 拉取时删本机多余文件 |
+| `syncPrune` | `false` | 严格镜像：拉取时把本机多余文件挪进回收站（不再直接删） |
+| `syncIdleMinutes` | `10` | 同步「无输出」超时（分钟，0 = 关）；超时就中止，避免一直「同步中」 |
+| `syncMaxMinutes` | `180` | 同步总时长上限（分钟，0 = 关） |
 | `syncFiles` | `[model, plugins]` | 装配文件：`model` / `plugins` / `credentials`（凭据默认不勾） |
 | `credentialsEnvelope` | `false` | 开「密钥信封」：凭据加密成 `.credentials.yaml.enc` 上传（云端只有密文，需同一个口令还原，见 §5.3） |
 | `workspaceRemap` | `true` | 拉取后自动重映射工作区路径（见 §5.5） |
@@ -370,7 +403,7 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 
 ---
 
-## 8. HTTP 路由（20 条，全部 exact + 仅 loopback）
+## 8. HTTP 路由（21 条，全部 exact + 仅 loopback）
 
 | 路由 | 方法 | 说明 |
 | --- | --- | --- |
@@ -385,6 +418,7 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 | `/sync/plan` | GET | 预演统计 |
 | `/sync/run` | POST | 开始同步（`{mode}`） |
 | `/sync/cancel` | POST | 取消同步 |
+| `/sync/log` | GET | 同步日志尾巴：`?lines=`（10…2000，默认 200）→ `{ok,path,lines,requested,text,bytes,state}` |
 | `/provision` | GET | aliyunpan 运行环境 + 安装状态与日志 |
 | `/provision/run` | POST | 自举安装（`{url}` 覆盖下载地址、`{tag}` 指定版本、`{local}` 用本地 zip/目录安装） |
 | `/pick` | POST | 弹系统选择框：`{kind, initial, title}`（kind = `dir` 或 `file`）→ `{ok, path}`；取消/超时 409 |
@@ -405,6 +439,8 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 - 信封是 AES-256-GCM + scrypt(N=32768)，能防「云盘被别人看到」，不能防「口令也被拿到」。口令别和备份放在同一个盘里。
 - `KEY.txt` 写入用 `mode: 0o600`，但 **Windows 忽略 POSIX 权限位**，实际靠 `%USERPROFILE%` 的目录 ACL 保护。
 - 日志只记路径、文件数、耗时、退出码，不记口令与文件内容。
+- **拉取不会删本机数据**：本机更大的文件不覆盖；严格镜像只把文件挪进 `<插件目录>\trash\`（保留 3 批），随时能手动还原；云端这次没取到文件时整段跳过。
+- **工作区索引合并而不是覆盖**：`storages/workspace.json` 合并会话归属、改前备份 `.bak-<时间戳>`，本机原有会话不会从界面消失。
 - 路由只接受 loopback 请求，非本机地址一律 403。
 
 ---
@@ -438,7 +474,8 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 ```powershell
 node --check lib/index.js      # 宿主半侧
 node --check lib/client.js     # 浏览器半侧
-node test/smoke.mjs            # 路由/配置/UI/客户端组件断言（20 条路由 + 装配文件根 + 登录接口）
+node test/smoke.mjs            # 路由/配置/UI/客户端组件断言（21 条路由 + 装配文件根 + 登录接口 + 看门狗）
+node test/safety.mjs           # 6 条数据安全用例：不覆盖本机更完整的记录 / 工作区合并 / 回收站 / 云端为空不删
 node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口令 → 解包 → 逐字节比对
 ```
 
@@ -446,21 +483,30 @@ node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口�
 
 | 文件 | 作用 |
 | --- | --- |
-| `lib/index.js` | 宿主半侧：14 条路由 + 配置读写 + 口令 + 系统选择框 |
+| `lib/index.js` | 宿主半侧：21 条路由 + 配置读写 + 口令 + 系统选择框 + 日志尾巴 |
 | `lib/client.js` | 设置卡片：同步上传 / 从机拉取 / 内嵌完整页 |
 | `lib/config.mjs` | 默认值、白名单、路径解析、`aliyunpan` 探测 |
 | `lib/provision.mjs` | 自举安装：查发布、挑包、下载（重试 + 镜像回退 + 本地包）、校验、解压、试跑、写配置 |
 | `lib/runner.mjs` | 解码任务：解析包路径、起子进程、日志/状态 |
 | `lib/syncplan.mjs` | 预演统计 |
-| `lib/syncrun.mjs` | 同步任务进程管理 |
+| `lib/syncrun.mjs` | 同步任务进程管理：输出心跳、无输出/总时长看门狗、孤儿进程识别 |
 | `lib/scripts/restore.mjs` | 解密 / 校验 / 解包 |
 | `lib/scripts/syncd.mjs` | 同步执行体（plan/upload/download） |
 | `lib/ui.html` | 完整配置页（单文件） |
+| `test/safety.mjs` | 数据安全用例（镜像保护、回收站、工作区合并） |
 | `test/fixtures/make-package.mjs` | 按 0.3.x 格式造包（加密） |
 
 ---
 
 ## 12. 变更记录
+
+### 0.6.0
+
+- **修「一直同步中」**：`lib/syncrun.mjs` 给子进程输出打时间戳当心跳，`judgeStall()` 两个阈值——无输出 `syncIdleMinutes`（默认 10 分钟）、总时长 `syncMaxMinutes`（默认 180 分钟），超时杀进程并把 `stalled` 原因写进 `sync-job.json`；重启后状态文件停在 running 但 pid 已死时，识别为 `interrupted` 并暴露 `state.orphan = {pid}`，卡片给「结束任务」按钮。
+- **可诊断的日志**：新增 `/sync/log?lines=`（10…2000）路由；界面里卡片有「运行日志」面板（刷新 / 加载更多 / 复制），完整配置页有「运行日志」折叠区；`/sync` 也带 200 行尾巴与 `timeout` 配置。日志每行带时间戳，同步中还能看到「已运行 N · 最近输出 M 前」。
+- **页面精简**：默认只显示账号 + 同步两张高频卡，「显示全部设置」开关放出低频卡（运行环境 / 插件更新 / 解码本地包 / 口令 / 路径配置 / 解码日志）；同步卡低频字段收进「高级设置」折叠区。同步卡改成 `minmax(0,1fr)` 栅格 + `pre-wrap` 日志，窄到 500 px 也不横向溢出。
+- **拉取绝不弄丢本机记录（重点修复）**：旧逻辑「size 变就覆盖」，DSH 会话是追加写，本机更长的那份会被云端旧版盖掉。现在本机文件更大时一律保留本机、云端版本进回收站；`storages/workspace.json` 改成合并（云端独有工作区补入、会话 id 并集、置顶并集，改前 `.bak-<时间戳>`）；`syncPrune` 从 `unlinkSync` 改成挪进 `trash/<时间戳>/pruned-<目录>/` 且云端空取时整段跳过；上传侧云端删除也加了「本机读到 0 个 / 要删比留下多」的防误删闸门（`--force` 才强删）。
+- 新增 `test/safety.mjs`（6 条用例：本机更大时保留、云端更大时更新、工作区合并、云端为空不删、严格镜像进回收站、会话缓存不被覆盖）；`syncd.mjs` 支持 `DSH_AB_SYNCD_IMPORT=1` 被 import（不触发云盘调用）。smoke 扩到 21 条路由 + 看门狗/孤儿进程断言。
 
 ### 0.5.4
 

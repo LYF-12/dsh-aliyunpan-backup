@@ -50,6 +50,16 @@
             max-height: 300px; overflow: auto; font-size: 12px; line-height: 1.45;
             white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; max-width: 100%; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  /* 非必要设置默认收纳：勾「显示全部设置」或 body.showall 才出现 */
+  .card.secondary { display: none; }
+  body.showall .card.secondary { display: block; }
+  .toggle { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); cursor: pointer; }
+  details.adv { margin-top: 12px; border: 1px dashed var(--line); border-radius: 8px; padding: 8px 10px; }
+  details.adv > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); }
+  details.adv[open] > summary { margin-bottom: 10px; }
+  details.logbox { margin-top: 10px; }
+  details.logbox > summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+  .spacer { flex: 1 1 auto; }
   .err { color: var(--bad); font-size: 13px; }
   .split { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
   .warnbox { border-left: 3px solid var(--warn); padding: 6px 10px; font-size: 12px; color: var(--muted); }
@@ -69,6 +79,10 @@
     <div class="row" style="margin-top:14px">
       <button id="btnRefresh">刷新</button>
       <span id="lastResult" class="muted"></span>
+      <span class="spacer"></span>
+      <label class="toggle" title="运行环境 / 插件更新 / 解包 / 口令 / 路径配置 平时用不到，出问题时再展开">
+        <input type="checkbox" id="showAll"> 显示全部设置
+      </label>
     </div>
     <div id="err" class="err"></div>
   </div>
@@ -98,7 +112,7 @@
     <div class="hint">换机器能不能找到数据，取决于这里的账号：<b>两台机器必须是同一个阿里云盘账号</b>（UID 一致），否则云端目录看起来是空的。登录信息由 aliyunpan 自己保存在安装目录旁，插件不另存密码。</div>
   </div>
 
-  <div class="card">
+  <div class="card secondary">
     <h2>运行环境（aliyunpan）</h2>
     <div class="row" style="justify-content:space-between">
       <span id="envState" class="badge"><span id="envDot" class="dot"></span><span id="envText">检查中…</span></span>
@@ -128,7 +142,7 @@
     <div class="hint">自举安装只做三件事：下载官方发布包 → 解压到插件数据目录 <code>tools\</code> → 跑一次 <code>--version</code> 确认能启动，然后把路径写进配置。不装服务、不写注册表、不需要管理员权限。</div>
   </div>
 
-  <div class="card">
+  <div class="card secondary">
     <h2>插件更新</h2>
     <div class="row" style="justify-content:space-between">
       <span id="updState" class="badge"><span id="updDot" class="dot"></span><span id="updText">检查中…</span></span>
@@ -161,6 +175,10 @@
       <label class="field">云端同步目录
         <input type="text" id="syncDir" placeholder="/DeepSeek Harness/DSH-Sync">
       </label>
+    </div>
+    <details class="adv">
+      <summary>高级设置：机器标识 / 互斥窗口 / 装配 profile / 暂存目录 / 路径映射 / 超时保护</summary>
+    <div class="split">
       <label class="field">机器标识（云端留痕用）
         <input type="text" id="syncMachine" placeholder="留空 = 计算机名">
       </label>
@@ -193,7 +211,15 @@
     <label class="field" style="margin-top:8px">不同步的 profile（逗号分隔）
       <input type="text" id="syncProfileExclude" placeholder="例如 abtest；避免测试 profile 传到别的机器">
     </label>
+      <label class="field">空闲超时（分钟没任何输出就自动中止；0 = 不检查）
+        <input type="number" id="syncIdleMinutes" min="0" max="720" step="1" placeholder="10">
+      </label>
+      <label class="field">总时长上限（分钟，到点强制结束；0 = 不限）
+        <input type="number" id="syncMaxMinutes" min="0" max="2880" step="1" placeholder="180">
+      </label>
+    </div>
     <div id="workspaceHint" class="hint" style="margin-top:4px"></div>
+    </details>
     <div id="syncDirs" class="row" style="margin-top:12px"></div>
     <div class="hint" style="margin-top:10px">配置文件（不带整棵 profiles / node_modules，只传装配需要的几个文件）</div>
     <div id="syncFiles" class="row"></div>
@@ -205,10 +231,18 @@
       <span id="syncHint" class="muted"></span>
     </div>
     <div id="syncTable" class="hint"></div>
-    <pre id="syncLog" style="margin-top:10px">（暂无）</pre>
+    <details class="logbox" id="syncLogBox">
+      <summary>运行日志（每行带时间戳；卡住/失败时把这里的内容复制给我就能定位）</summary>
+      <div class="row" style="margin-top:6px">
+        <button type="button" id="btnLogMore">加载更多</button>
+        <button type="button" id="btnLogCopy">复制日志</button>
+        <span id="logHint" class="muted"></span>
+      </div>
+      <pre id="syncLog" style="margin-top:8px">（暂无）</pre>
+    </details>
   </div>
 
-  <div class="card">
+  <div class="card secondary">
     <h2>解码本地包（旧版备份 / 别人分享）</h2>
     <div class="hint" style="margin:0 0 10px">
       手里有 <code>payload.enc</code>（或含它的文件夹）就能解。填路径 → 校验 → 解包，解出来的文件<strong>不会</strong>覆盖本机 <code>.dsh</code>，只落到你指定的目录里。
@@ -248,7 +282,7 @@
     <div class="warnbox">别人的包只要 <code>payload.enc</code> + 口令就够；<code>package.info.json</code> 只是给页面显示用的元数据。口令错会报 <code>AUTH FAIL at chunk 0</code>。</div>
   </div>
 
-  <div class="card">
+  <div class="card secondary">
     <h2>口令（KEY.txt）</h2>
     <div class="row">
       <span id="keyState" class="muted">读取中…</span>
@@ -266,7 +300,7 @@
     <div id="keyMsg" class="hint"></div>
   </div>
 
-  <div class="card">
+  <div class="card secondary">
     <h2>路径配置</h2>
     <div class="split">
       <label class="field">对应 DSH 目录
@@ -307,7 +341,7 @@
     <div id="paths" class="hint"></div>
   </div>
 
-  <div class="card">
+  <div class="card secondary">
     <h2>解码日志</h2>
     <pre id="log">（暂无）</pre>
     <div class="hint" id="logPath"></div>
@@ -323,6 +357,13 @@ const fmtBytes = (n) => {
   return mb >= 1 ? mb.toFixed(2) + ' MB' : (n / 1024).toFixed(1) + ' KB';
 };
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString() : '-');
+const fmtDur = (sec) => {
+  if (sec == null || isNaN(sec)) return '-';
+  const s = Math.max(0, Math.floor(sec));
+  if (s < 60) return s + ' 秒';
+  if (s < 3600) return Math.floor(s / 60) + ' 分 ' + (s % 60) + ' 秒';
+  return Math.floor(s / 3600) + ' 小时 ' + Math.floor((s % 3600) / 60) + ' 分';
+};
 let timer = null;
 let syncTimer = null;
 
@@ -610,6 +651,9 @@ function fillSync(data) {
   $('syncDir').value = data.dir || '';
   $('syncMachine').value = data.machine || '';
   $('syncLockMinutes').value = data.lockMinutes;
+  const to = data.timeout || {};
+  $('syncIdleMinutes').value = to.idleMinutes == null ? 10 : to.idleMinutes;
+  $('syncMaxMinutes').value = to.maxMinutes == null ? 180 : to.maxMinutes;
   if (document.activeElement !== $('syncDlDir')) $('syncDlDir').value = data.dlDir || '';
   if (document.activeElement !== $('syncProfile')) $('syncProfile').value = (data.config && data.config.syncProfile) || '';
   $('syncPrune').checked = data.prune === true;
@@ -625,7 +669,14 @@ function fillSync(data) {
   const st = data.state || {};
   const job = st.job;
   if (st.running) {
-    $('syncHint').textContent = '同步中… ' + ((job && job.mode) || '');
+    const mode = (job && job.mode) === 'download' ? '拉取' : '上传';
+    $('syncHint').textContent = '同步中… ' + mode +
+      (st.runningSec == null ? '' : ' · 已运行 ' + fmtDur(st.runningSec) + ' · 最近输出 ' + fmtDur(st.idleSec) + '前') +
+      (to.idleMinutes ? '（' + to.idleMinutes + ' 分钟无输出会自动中止）' : '');
+  } else if (st.orphan) {
+    $('syncHint').textContent = '上次的同步进程（pid ' + st.orphan.pid + '）可能还卡着（宿主重启过）。点「取消」结束它再重新同步。';
+  } else if (job && job.phase === 'interrupted') {
+    $('syncHint').textContent = '上次同步没有正常结束（宿主重启或崩溃），已标记中断；展开下面的运行日志看停在哪一步。';
   } else if (job && job.result) {
     $('syncHint').textContent = (job.phase === 'done' ? '上次成功 · ' : '上次失败 · ') + job.result;
   } else if (st.last && st.last.at) {
@@ -634,7 +685,7 @@ function fillSync(data) {
     $('syncHint').textContent = '还没有同步过：勾好范围后点「开始同步」（本机 = 主机时是上传）';
   }
   $('btnSyncRun').disabled = !!st.running;
-  $('btnSyncCancel').disabled = !st.running;
+  $('btnSyncCancel').disabled = !st.running && !st.orphan;
   if (st.running) {
     if (syncTimer) clearTimeout(syncTimer);
     syncTimer = setTimeout(refreshSync, 1500);
@@ -682,6 +733,8 @@ async function saveSyncQuiet() {
       syncDir: $('syncDir').value.trim(),
       syncMachine: $('syncMachine').value.trim(),
       syncLockMinutes: Number($('syncLockMinutes').value),
+      syncIdleMinutes: Number($('syncIdleMinutes').value),
+      syncMaxMinutes: Number($('syncMaxMinutes').value),
       syncDlDir: $('syncDlDir').value.trim(),
       syncPrune: $('syncPrune').checked,
       credentialsEnvelope: $('credentialsEnvelope').checked,
@@ -943,6 +996,45 @@ $('credentialsEnvelope').onchange = saveSyncQuiet;
 $('workspaceRemap').onchange = saveSyncQuiet;
 $('workspaceMap').onchange = saveSyncQuiet;
 $('syncProfileExclude').onchange = saveSyncQuiet;
+$('syncIdleMinutes').onchange = saveSyncQuiet;
+$('syncMaxMinutes').onchange = saveSyncQuiet;
+
+// ---- 非必要设置收纳（记住上次选择） ----
+const showAllBox = $('showAll');
+function applyShowAll(on) {
+  document.body.classList.toggle('showall', !!on);
+  if (showAllBox) showAllBox.checked = !!on;
+}
+try { applyShowAll(localStorage.getItem('ab-showall') === '1'); }
+catch (error) { applyShowAll(false); }
+if (showAllBox) {
+  showAllBox.onchange = () => {
+    applyShowAll(showAllBox.checked);
+    try { localStorage.setItem('ab-showall', showAllBox.checked ? '1' : '0'); } catch (error) { /* 忽略 */ }
+  };
+}
+
+// ---- 运行日志：展开时拉 /sync/log（比 /sync 里的 200 行更省） ----
+async function loadSyncLog(lines) {
+  try {
+    const body = await api('/sync/log' + (lines ? '?lines=' + lines : ''));
+    $('syncLog').textContent = body.text || '（空）';
+    $('logHint').textContent = (body.lines || 0) + ' 行 · ' + fmtBytes(body.bytes) + ' · ' + (body.path || '');
+  } catch (error) {
+    $('logHint').textContent = String(error.message || error);
+  }
+}
+$('syncLogBox').ontoggle = () => { if ($('syncLogBox').open) loadSyncLog(400); };
+$('btnLogMore').onclick = () => loadSyncLog(600);
+$('btnLogCopy').onclick = async () => {
+  const text = $('syncLog').textContent || '';
+  try {
+    await navigator.clipboard.writeText(text);
+    $('logHint').textContent = '已复制 ' + text.length + ' 字符';
+  } catch (error) {
+    $('logHint').textContent = '复制失败，请手动选中日志：' + String(error.message || error);
+  }
+};
 $('btnSyncCancel').onclick = async () => {
   try { await api('/sync/cancel', { method: 'POST' }); refreshSync(); }
   catch (error) { $('syncHint').textContent = String(error.message || error); }
