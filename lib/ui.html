@@ -147,7 +147,7 @@
   <div class="card">
     <h2>同步（多机共享同一份数据）</h2>
     <div class="hint" style="margin:0 0 10px">
-      不打包、不加密，按目录逐文件增量复制，云端能直接看到原始目录结构。
+      不打包、不加密（只有开了「密钥信封」时登录凭据那一个文件是密文），按目录逐文件增量复制，云端能直接看到原始目录结构。
       <strong>同一时间只在一台机器上同步</strong>：常用那台当「主机」上传，其它机器当「从机」拉取；
       拉取会写进本机 <code>.dsh</code>，建议先退出 DSH 再拉。
     </div>
@@ -180,6 +180,10 @@
     <label class="hint" style="display:block;margin-top:8px">
       <input type="checkbox" id="syncPrune"> 拉取时删除本机多余文件（严格镜像；默认只增不删）
     </label>
+    <label class="hint" style="display:block;margin-top:6px">
+      <input type="checkbox" id="credentialsEnvelope"> 加密同步登录凭据（密钥信封：用口令把 .credentials.yaml 加密后单独上传，云端只有密文）
+    </label>
+    <div id="envelopeHint" class="hint" style="margin-top:4px"></div>
     <div id="syncDirs" class="row" style="margin-top:12px"></div>
     <div class="hint" style="margin-top:10px">配置文件（不带整棵 profiles / node_modules，只传装配需要的几个文件）</div>
     <div id="syncFiles" class="row"></div>
@@ -551,6 +555,30 @@ function pickedSyncFiles() {
     .map((cb) => cb.value);
 }
 
+/** 密钥信封：勾上后凭据走密文，明文那项自动禁用（避免同一份凭据两个副本）。 */
+function applyEnvelopeUi(env) {
+  const on = env.enabled === true;
+  const box = $('syncFiles');
+  if (box) {
+    for (const cb of box.querySelectorAll('input[type=checkbox]')) {
+      if (cb.value !== 'credentials') continue;
+      cb.disabled = on;
+      cb.parentElement.style.opacity = on ? '0.45' : '1';
+      cb.parentElement.title = on ? '已改用密钥信封，明文凭据不再单独上传' : '';
+    }
+  }
+  const hint = $('envelopeHint');
+  if (!hint) return;
+  if (!on) {
+    hint.textContent = '未开启：.credentials.yaml 明文凭据不会上传（推荐保持关闭，或改开上面的密钥信封）';
+    return;
+  }
+  const parts = ['已开启：凭据加密后上传到 ' + (env.remotePath || '.credentials.yaml.enc') + '（云端只有密文）'];
+  parts.push(env.keyReady ? '口令已就绪' : '⚠ 还没有口令：先到「口令（KEY.txt）」生成或粘贴，否则不会上传');
+  parts.push(env.credentialsBytes > 0 ? '本机凭据 ' + env.credentialsBytes + ' 字节' : '本机没有 .credentials.yaml，本次会跳过');
+  hint.textContent = parts.join(' · ');
+}
+
 function fillSync(data) {
   $('syncMode').value = data.mode || 'upload';
   $('syncDir').value = data.dir || '';
@@ -559,8 +587,10 @@ function fillSync(data) {
   if (document.activeElement !== $('syncDlDir')) $('syncDlDir').value = data.dlDir || '';
   if (document.activeElement !== $('syncProfile')) $('syncProfile').value = (data.config && data.config.syncProfile) || '';
   $('syncPrune').checked = data.prune === true;
+  $('credentialsEnvelope').checked = !!(data.envelope && data.envelope.enabled);
   renderSyncDirs(data);
   renderSyncFiles(data);
+  applyEnvelopeUi(data.envelope || {});
   $('syncLog').textContent = (data.log && data.log.text) || '（暂无）';
   const st = data.state || {};
   const job = st.job;
@@ -624,6 +654,7 @@ async function saveSyncQuiet() {
       syncLockMinutes: Number($('syncLockMinutes').value),
       syncDlDir: $('syncDlDir').value.trim(),
       syncPrune: $('syncPrune').checked,
+      credentialsEnvelope: $('credentialsEnvelope').checked,
       syncProfile: $('syncProfile').value.trim(),
       syncDirs: pickedSyncDirs(),
       syncFiles: pickedSyncFiles(),
@@ -875,6 +906,7 @@ $('btnKeySave').onclick = saveKey;
 $('btnSyncPlan').onclick = planSyncRun;
 $('btnSyncRun').onclick = runSync;
 $('btnSyncSave').onclick = saveSyncQuiet;
+$('credentialsEnvelope').onchange = saveSyncQuiet;
 $('btnSyncCancel').onclick = async () => {
   try { await api('/sync/cancel', { method: 'POST' }); refreshSync(); }
   catch (error) { $('syncHint').textContent = String(error.message || error); }

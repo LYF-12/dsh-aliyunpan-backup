@@ -98,7 +98,8 @@ svg{max-width:100%;height:auto;display:block;margin:0 auto}
 <header class="hero">
   <h1>DSH 云同步 · 使用说明</h1>
   <p>把 DeepSeek Harness 的会话、附件、工作区索引、任务板，逐目录增量镜像到阿里云盘；换台电脑拉回来就能接着用。</p>
-  <div class="tags"><span>插件版本 0.5.2</span><span>同步主链路</span><span>插件内更新</span><span>附带包解码器</span><span>一主多从</span></div>
+  <div class="tags"><span>插件版本 0.5.3</span>
+  <span>密钥信封</span><span>同步主链路</span><span>插件内更新</span><span>附带包解码器</span><span>一主多从</span></div>
 </header>
 
 <section id="s1">
@@ -200,7 +201,7 @@ aliyunpan ls "/"       <span class="c"># 能列目录就算通了</span></code><
     <span class="node">刷新</span><span class="arrow">·</span>
     <span class="node">打开完整配置页</span>
   </div>
-  <p>完整配置页里九张卡：<b>阿里云盘账号</b>、<b>运行环境</b>、<b>插件更新</b>、<b>同步</b>、<b>解码本地包</b>、<b>口令</b>、<b>路径配置</b>、<b>解码日志</b>。第一次用建议先开完整配置页做设置。</p>
+  <p>完整配置页里八张卡：<b>阿里云盘账号</b>、<b>运行环境</b>、<b>插件更新</b>、<b>同步</b>、<b>解码本地包</b>、<b>口令</b>、<b>路径配置</b>、<b>解码日志</b>。第一次用建议先开完整配置页做设置。</p>
   <p>插件卡片上也会多一行账号状态；未登录时按钮里多一个〔去登录〕（直接就地展开配置页）。</p>
   <p>卡片上的状态徽标只反映<b>同步</b>这条链路：<code>未同步</code> → <code>同步中</code> → <code>已上传</code> / <code>已拉取</code>。<b>看到「未同步」不等于插件坏了</b>，点一次「同步上传」就开始。缺 CLI 时徽标是「缺 aliyunpan」，右侧会多一个「下载 aliyunpan」。</p>
   <div class="ok"><b>路径不用手打</b>配置页里每个路径框右边都有「浏览…」，点开是 Windows 原生选择框，选完自动回填。也可以继续手填。</div>
@@ -211,7 +212,7 @@ aliyunpan ls "/"       <span class="c"># 能列目录就算通了</span></code><
   <p class="lead">把本机数据推到云端。第一次是全量，之后只传变化的文件。</p>
 
   <div class="flow">
-    <div class="step"><h4>选目录 + 装配文件</h4><p>同步卡片里勾选要传的目录。默认四个：<code>sessions</code>（会话）、<code>attachments</code>（附件）、<code>storages</code>（工作区/定时/索引）、<code>task-board</code>（任务板）。还可以加 <code>skins</code>、<code>pets</code>、<code>eda</code>、<code>sources</code>、<code>backups</code>、<code>dsh-usage</code>。</p><p>下面还有三个<b>文件级</b>选项：<b>模型与插件装配</b>（<code>profiles/&lt;profile&gt;/cordis.patch.yml</code>，模型列表在这里）、<b>插件清单</b>（<code>package.json</code> + 锁文件）、<b>登录凭据</b>（<code>.credentials.yaml</code>，默认不勾）。<b>API Key 不在模型配置里</b>，要带走 Key 得单独勾「登录凭据」，那是明文上云。</p></div>
+    <div class="step"><h4>选目录 + 装配文件</h4><p>同步卡片里勾选要传的目录。默认四个：<code>sessions</code>（会话）、<code>attachments</code>（附件）、<code>storages</code>（工作区/定时/索引）、<code>task-board</code>（任务板）。还可以加 <code>skins</code>、<code>pets</code>、<code>eda</code>、<code>sources</code>、<code>backups</code>、<code>dsh-usage</code>。</p><p>下面还有三个<b>文件级</b>选项：<b>模型与插件装配</b>（<code>profiles/&lt;profile&gt;/cordis.patch.yml</code>，模型列表在这里）、<b>插件清单</b>（<code>package.json</code> + 锁文件）、<b>登录凭据</b>（<code>.credentials.yaml</code>，默认不勾）。<b>API Key 不在模型配置里</b>，要带走 Key 得单独勾「登录凭据」（明文上云），或者勾「加密同步登录凭据（密钥信封）」走密文（见下面的密钥信封）。</p></div>
     <div class="step"><h4>预演</h4><p>点「预演」只做统计：多少个文件、多少 MB、云端目标路径。不动云端也不动本机。心里有数再传。</p></div>
     <div class="step"><h4>开始同步（upload 模式）</h4><p>新增文件走 <code>--skip</code>（云端同名跳过），修改文件走 <code>-ow</code> 覆盖，无变化直接跳过。按云端父目录分批、每批 ≤20 个、4 并发。</p></div>
     <div class="step"><h4>看结果</h4><p>每个目录一行：<code>OK 上传 N 个文件 用时 Ns</code>。末行固定 <code>SYNC RESULT: mode=upload roots=N files=N failed=0</code>。失败数非 0 就看下面的同步日志。</p></div>
@@ -226,6 +227,19 @@ aliyunpan ls "/"       <span class="c"># 能列目录就算通了</span></code><
   _last-sync-A.json   <span class="c"># 本机留痕，供其它机器判断谁最近同步过</span></code></pre>
 
   <div class="ok"><b>为什么只传变化的部分</b>本地 <code>sync-index.json</code> 记着每个文件的 size + mtime。比对出新/改/不变，分别处理。索引丢了会自动退回全量覆盖，不会漏内容。</div>
+
+  <h3>凭据：密钥信封（可选，0.5.3 起）</h3>
+  <p>想连 API Key 一起带到另一台机器，又不想明文上云：勾「加密同步登录凭据（密钥信封）」。插件用 <code>keyFile</code> 里的口令把 <code>.credentials.yaml</code> 加密成 <code>.credentials.yaml.enc</code> 再上传，云端只有密文；勾上后明文「登录凭据」那一项自动置灰。</p>
+  <table>
+    <tr><th></th><th>不开信封</th><th>开信封（<code>credentialsEnvelope: true</code>）</th></tr>
+    <tr><td>云端文件</td><td><code>DSH-Sync/.credentials.yaml</code>（明文）</td><td><code>DSH-Sync/.credentials.yaml.enc</code>（AES-256-GCM）</td></tr>
+    <tr><td>换机器还原</td><td>下下来就是明文</td><td>必须同一个口令，解出写回 <code>~/.dsh/.credentials.yaml</code></td></tr>
+    <tr><td>口令丢了</td><td>不影响</td><td>那个信封永久打不开（Key 仍在本机）</td></tr>
+  </table>
+  <div class="warn"><b>两台机器必须同一个口令</b>口令存在 <code>KEY.txt</code>，不随同步上传。新机器在配置页「口令（KEY.txt）」里粘贴主机那串，再拉取。口令错只会报「口令不对（或信封被改过），解密失败」，不会写坏本机凭据；本机已有不同内容会先备份成 <code>.credentials.yaml.bak-&lt;时间戳&gt;</code>。</div>
+  <pre><code><span class="c"># 命令行等价</span>
+node lib/scripts/syncd.mjs --mode upload     <span class="c"># 加密并上传 .credentials.yaml.enc</span>
+node lib/scripts/syncd.mjs --mode download   <span class="c"># 下载密文并解密写回 .credentials.yaml</span></code></pre>
 </section>
 
 <section id="s4">
@@ -367,6 +381,7 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "&lt;云端路径&gt;"
     <tr><td><code>syncDlDir</code></td><td>空 = 插件目录 <code>sync-dl</code></td><td>拉取暂存目录</td></tr>
     <tr><td><code>syncPrune</code></td><td><code>false</code></td><td>拉取时删本机多余文件</td></tr>
 <tr><td><code>syncFiles</code></td><td><code>[model, plugins]</code></td><td>装配文件：<code>model</code> 模型配置、<code>plugins</code> 插件清单、<code>credentials</code> 登录凭据（默认不勾）</td></tr>
+<tr><td><code>credentialsEnvelope</code></td><td><code>false</code></td><td>开「密钥信封」：凭据加密成 <code>.credentials.yaml.enc</code> 上传，云端只有密文，换机器需同一口令</td></tr>
 <tr><td><code>syncProfile</code></td><td>空 = 自动</td><td>装配文件用哪个 profile 名；新机器还没建 profile 时也能填</td></tr>
     <tr><td><code>stagingDir</code></td><td>空 = 自动</td><td>包与解包临时区</td></tr>
     <tr><td><code>keyFile</code></td><td>空 = <code>staging\KEY.txt</code></td><td>本机口令文件</td></tr>
@@ -454,7 +469,7 @@ node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --ou
     <tr><td>云端同步根</td><td><code>/DeepSeek Harness/DSH-Sync</code></td></tr>
     <tr><td>云端旧包目录</td><td><code>/DeepSeek Harness/DSH-Backup</code></td></tr>
   </table>
-  <p class="foot">插件版本 0.5.2 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
+  <p class="foot">插件版本 0.5.3 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
 </section>
 
 </main>

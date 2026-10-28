@@ -461,4 +461,57 @@ assert.deepEqual([...new Set(manyFiles.map((r) => r.profile))].sort(), ['desktop
 // 目录根不带 profile 字段（回归：别把 dir 也当成装配文件）
 assert.ok(oneToOne.filter((r) => r.kind === 'dir').every((r) => r.profile === undefined), 'dir roots have no profile field');
 
+
+// ---- 密钥信封（0.5.3）：凭据加密后单独上传，云端只有密文 ----
+const envMod = await import(new URL('../lib/envelope.mjs', import.meta.url).href);
+const pass = 'smoke-passphrase-42';
+const sealed = envMod.seal('refs:\n  - LISSOM_API_KEY\n', pass);
+assert.equal(sealed.subarray(0, 8).toString('latin1'), 'DSHKEY01', 'envelope magic');
+assert.equal(sealed.toString('latin1').includes('LISSOM_API_KEY'), false, 'ciphertext does not leak plaintext');
+assert.equal(envMod.open(sealed, pass).toString('utf8'), 'refs:\n  - LISSOM_API_KEY\n', 'envelope round trip');
+assert.throws(() => envMod.open(sealed, 'wrong-passphrase-99'), /口令不对/, 'wrong passphrase rejected');
+const tampered = Buffer.from(sealed);
+tampered[tampered.length - 1] ^= 0xff;
+assert.throws(() => envMod.open(tampered, pass), /口令不对/, 'tampered tag rejected');
+assert.throws(() => envMod.open(Buffer.from('not-an-envelope-at-all'), pass), /信封太短|magic/, 'garbage rejected');
+
+const envHome = path.join(tmpHome, "dsh-env");
+fs.mkdirSync(envHome, { recursive: true });
+const keyPath = path.join(tmpHome, "env-KEY.txt");
+fs.writeFileSync(keyPath, pass + "\n", "utf8");
+const credPath = envMod.credentialsPath(envHome);
+fs.writeFileSync(credPath, "refs:\n  - LISSOM_API_KEY\n", "utf8");
+assert.equal(envMod.hasPass(keyPath), true, "hasPass true with a key file");
+assert.equal(envMod.hasPass(path.join(tmpHome, "missing-KEY.txt")), false, "hasPass false without a key file");
+assert.throws(() => envMod.readPass(path.join(tmpHome, "missing-KEY.txt")), /读不到口令文件/, "missing key file error");
+fs.writeFileSync(path.join(tmpHome, "short-KEY.txt"), "short\n", "utf8");
+assert.throws(() => envMod.readPass(path.join(tmpHome, "short-KEY.txt")), /口令太短/, "short passphrase rejected");
+
+const sealedFile = envMod.sealFile(envHome, keyPath);
+assert.ok(Buffer.isBuffer(sealedFile) && sealedFile.length > 36, "sealFile returns an envelope");
+// 本机凭据被改过：解密回写要改成旧内容，并先备份
+
+fs.writeFileSync(credPath, "refs:\n  - CHANGED\n", "utf8");
+const restored = envMod.openToFile(sealedFile, keyPath, credPath);
+assert.equal(restored.changed, true, "openToFile rewrites when content differs");
+assert.ok(restored.backup && fs.existsSync(restored.backup), "previous credentials are backed up");
+assert.match(fs.readFileSync(restored.backup, "utf8"), /CHANGED/, "backup keeps the old content");
+assert.match(fs.readFileSync(credPath, "utf8"), /LISSOM_API_KEY/, "credentials restored from the envelope");
+const twice = envMod.openToFile(sealedFile, keyPath, credPath);
+assert.equal(twice.changed, false, "same content -> no rewrite, no backup");
+assert.equal(twice.backup, "", "no backup when nothing changed");
+
+// 缺凭据的机器上 sealFile 要给可读错误，而不是崩
+assert.throws(() => envMod.sealFile(path.join(tmpHome, "emptydsh"), keyPath), /不需要同步凭据/, "sealFile without credentials");
+
+// /status 暴露信封状态，开关能存进配置
+const envStatus = await call(base + "/status");
+assert.equal(typeof envStatus.json.envelope.enabled, "boolean", "/status exposes envelope.enabled");
+assert.equal(typeof envStatus.json.envelope.keyReady, "boolean", "/status exposes envelope.keyReady");
+assert.ok(envStatus.json.envelope.remotePath.endsWith("/.credentials.yaml.enc"), "remote envelope path: " + envStatus.json.envelope.remotePath);
+assert.equal(envStatus.json.envelope.keyFile, envStatus.json.view.keyFile, "envelope reports the configured key file");
+const envOn = await call(base + "/config", { method: "POST", body: { credentialsEnvelope: true } });
+assert.equal(envOn.json.config.credentialsEnvelope, true, "credentialsEnvelope saved");
+const envStatusOn = await call(base + "/status");
+assert.equal(envStatusOn.json.envelope.enabled, true, "envelope switch is visible in /status");
 console.log('SMOKE OK  routes=' + routes.size + '  home=' + tmpHome);

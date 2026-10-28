@@ -6,7 +6,7 @@
 
 顺手还带一个**解码器**：本地或别人分享的 `payload.enc` 备份包，可以校验完整性、解包落盘。
 
-- 同步是**明文镜像**：云端就是原始目录树，不用口令，能直接在网页版云盘里看/下载（见 §5）
+- 同步是**明文镜像**：云端就是原始目录树，不用口令，能直接在网页版云盘里看/下载（见 §5）；唯一的例外是开了「密钥信封」后的登录凭据（见 §5.3）
 - 解码只处理加密包：口令（KEY.txt）**只在本机**，云端只有密文；解别人分享的包时在页面里临时填对方的口令即可（见 §6）
 - 界面：设置 → 插件 → 本插件里一个配置卡片；另有完整配置页 `/api/dsh-aliyunpan-backup/ui`
 - 自举安装：找不到 `aliyunpan` 时一键从 GitHub 官方发布装进插件数据目录
@@ -23,6 +23,7 @@
 | 校验加密包完整性 | 可用 | `payload.enc` 任意位置，按 manifest 逐个 sha256 |
 | 解包加密包 | 可用 | 默认落到暂存目录，不覆盖 `.dsh`，人工挑回 |
 | 按模块勾选同步内容 | 可用 | 10 个白名单目录多选 + 3 类装配文件（模型配置 / 插件清单 / 凭据），仍不支持任意路径 |
+| 凭据加密同步（密钥信封） | 可用（0.5.3） | 可选：`.credentials.yaml` 用口令加密成 `.credentials.yaml.enc` 上传，云端只有密文，换机同口令还原（见 §5.3） |
 | 路径手输 / 系统选择框 | 可用 | 配置页每个路径旁边都有「浏览…」，弹 Windows 原生文件夹/文件对话框 |
 | 打包 + 加密 + 上传 | **已移除**（0.4.0） | 上传交给同步链路；旧包仍可解码 |
 | 双向实时同步 | 不支持 | 需要手动点「开始同步」，多机靠锁与索引避免互相踩 |
@@ -129,7 +130,7 @@ dsh plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup   # 等同�
 | 下载 aliyunpan | **只在找不到 exe 时出现**，一键自举安装（见 §2.1） |
 | 更新插件到 x / 检查插件更新 | 有新版本时显示前者，点一下自更新（见 §2.4）；更新后需重启 DSH |
 
-完整配置页（`/api/dsh-aliyunpan-backup/ui`）八张卡：运行环境、插件更新、同步、解码本地包、口令、路径配置、解码日志；「运行环境」卡显示 aliyunpan 是否就绪、版本、安装路径、安装进度日志，以及自定义下载地址。
+完整配置页（`/api/dsh-aliyunpan-backup/ui`）八张卡：阿里云盘账号、运行环境、插件更新、同步、解码本地包、口令、路径配置、解码日志；「运行环境」卡显示 aliyunpan 是否就绪、版本、安装路径、安装进度日志，以及自定义下载地址。
 
 所有路径输入框旁边都有按钮：
 
@@ -145,7 +146,7 @@ dsh plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup   # 等同�
 
 0. （没装过的话）在配置页「运行环境」里点「下载并安装 aliyunpan」，装完再 `aliyunpan login` 登录。
 1. `aliyunpan login` 登录（每台机器各自登录）。
-2. 打开完整配置页，在「同步」卡片勾选要同步的目录（默认 `sessions` / `attachments` / `storages` / `task-board`），再勾要带的装配文件（默认「模型与插件装配」+「插件清单」，见 §5.2）。
+2. 打开完整配置页，在「同步」卡片勾选要同步的目录（默认 `sessions` / `attachments` / `storages` / `task-board`），再勾要带的装配文件（默认「模型与插件装配」+「插件清单」，见 §5.2）。想连登录凭据一起带走就勾「加密同步登录凭据（密钥信封）」，并在「口令（KEY.txt）」里生成/粘贴同一串口令（见 §5.3）。
 3. 点「预演」看一眼文件数与体积，再点「开始同步」做首次全量上传。
 4. 同步设置点「保存同步设置」持久化（机器名会自动取计算机名）。
 
@@ -173,10 +174,10 @@ dsh plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup   # 等同�
 | --- | --- | --- | --- |
 | 模型与插件装配 | `profiles/<profile>/cordis.patch.yml` | `DSH-Sync/profiles/<profile>/cordis.patch.yml` | 勾 |
 | 插件清单 | `package.json` / `pnpm-lock.yaml` / `pnpm-workspace.yaml` | 同上目录 | 勾 |
-| 登录凭据 | `.credentials.yaml` | `DSH-Sync/.credentials.yaml` | **不勾** |
+| 登录凭据（明文） | `.credentials.yaml` | `DSH-Sync/.credentials.yaml` | **不勾**（推荐改用 §5.3 的密钥信封） |
 
 - 模型 provider 与模型列表在 `cordis.patch.yml` 里，但 **API Key 不在里面**，Key 在 `.credentials.yaml`（明文 YAML）。所以「勾上模型配置」不会顺带把 Key 传上去。
-- 想连 Key 一起带走，得显式勾「登录凭据」。这是**明文上云**，只建议私有盘、自己的账号。
+- 想连 Key 一起带走有两条路：显式勾「登录凭据」= **明文上云**（只建议私有盘、自己的账号）；或者开 **密钥信封**（§5.3），凭据加密成单文件上传，云端只有密文 —— 推荐这条。
 - `profiles/` 整棵目录不能同步：里面是几十万个 `node_modules` 文件。插件清单的用途是**在另一台机器上照着重装**，不是直接拷文件。
 - 装配文件按**文件**比对（size + mtime），上传固定 `-ow` 覆盖，不会产生 `name(1).yml` 副本。
 - **上传**：「装配文件用哪个 profile」留空 = 本机第一个真实存在的 profile（跳过 `_bak-*`）。
@@ -190,7 +191,32 @@ dsh plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup   # 等同�
 
   多个云端 profile 不做合并映射：往同一个本机文件写两份会互相覆盖，宁可各建各的目录，你重启时自己选。
 
-### 5.3 拉取（云端 → 从机）
+### 5.3 密钥信封：加密同步登录凭据（0.5.3 起，可选）
+
+`.credentials.yaml` 里是明文 API Key 与账号 token。直接勾「登录凭据」等于明文上云；更稳的做法是开「密钥信封」：用本机口令把它加密成一个文件再上传。
+
+| | 不开信封 | 开信封（`credentialsEnvelope: true`） |
+| --- | --- | --- |
+| 云端文件 | `DSH-Sync/.credentials.yaml`（明文） | `DSH-Sync/.credentials.yaml.enc`（AES-256-GCM 密文） |
+| 换机器还原 | 下下来就是明文 | 必须同一个口令，解出后写到本机 `~/.dsh/.credentials.yaml` |
+| 口令丢了 | 不影响 | 那个信封永久打不开（Key 仍在本机，不算丢数据） |
+| 每次同步 | 按 size+mtime 传变化 | 同左，内容没变不重传 |
+
+**怎么开**：配置页「同步」卡 → 勾「加密同步登录凭据（密钥信封）」→ 保存。勾上后「登录凭据（明文）」那一项会自动置灰 —— 同一份凭据不留两个副本。plan 预演里会多出 `.credentials.yaml.enc` 这一行。
+
+**两台机器必须同一个口令**：口令在 `keyFile`（默认 `<插件数据目录>\KEY.txt`），不随同步上传。新机器在配置页「口令（KEY.txt）」里粘贴主机那串，再「从机拉取」。命令行等价：
+
+```text
+node lib/scripts/syncd.mjs --mode upload     # 生成 .credentials.yaml.enc 并上传
+node lib/scripts/syncd.mjs --mode download   # 下载密文并解密写回 .credentials.yaml
+```
+
+- 加密细节：scrypt(N=32768,r=8,p=1) 派生 32 字节密钥 + AES-256-GCM，随机 salt(16)/nonce(12)，AAD 固定 `dsh-credentials-v1`；文件格式 `magic "DSHKEY01"(8) | salt(16) | nonce(12) | ciphertext | tag(16)`。
+- 口令错或密文被改过都只报「口令不对（或信封被改过），解密失败」，**不会写坏本机凭据**；本机已有不同内容时先备份成 `.credentials.yaml.bak-<时间戳>` 再覆盖。
+- 未登录/无凭据时不报错：本机没有 `.credentials.yaml` 就跳过；没有口令会打 `[warn]` + `[hint] 先在配置页「口令（KEY.txt）」里生成或粘贴口令`。
+- 信封与「旧加密包」共用 `KEY.txt`，但用途互不影响（同一串口令两处都能用）。
+
+### 5.4 拉取（云端 → 从机）
 
 ```text
 # 1) CLI 只负责把云端目录下到暂存区
@@ -205,19 +231,19 @@ aliyunpan download --saveto <暂存目录> --ow -p 3 <云端目录>
 - 拉取前请先退出 DSH：正在运行的应用握着会话文件，Windows 上写盘会被拒。
 - 云端 profile 名会被自动发现（`[info] 云端 profile: desktop、web`），落地目录名按 §5.2 的规则映射，不用手动改配置。
 
-### 5.4 多机与锁
+### 5.5 多机与锁
 
 - 每台机器写入 `_last-sync-<机器名>.json`，借此判断「另一台机器最近是否同步过」。
 - `syncLockMinutes`（默认 60）内有其它机器活动时：默认只**告警**继续，`--strict` 下直接退出。
 - 两台机器同时上传同一批文件没有合并逻辑：**约定一台主机推、其它只拉**最省事。
 
-### 5.5 三个坑
+### 5.6 三个坑
 
 1. `Access is denied` / 暂存目录被拦 → 安全软件拦了 `aliyunpan.exe` 写盘。日志会打 `[hint]`，把 `syncDlDir` 换到允许的目录，或给 exe 加白。
 2. 不要用 `aliyunpan sync start`（CLI 自带同步）。它自己维护状态、和本插件的索引互相打架，行为不可预期。
 3. 先退出 DSH 再拉取，否则 `ledger-v2.lock` 之类的锁文件写不进去。
 
-### 5.6 命令行等价物
+### 5.7 命令行等价物
 
 ```powershell
 # 预演：只统计，不动云端
@@ -293,6 +319,7 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 | `syncDlDir` | 空 = 插件目录 `sync-dl` | 拉取暂存目录 |
 | `syncPrune` | `false` | 拉取时删本机多余文件 |
 | `syncFiles` | `[model, plugins]` | 装配文件：`model` / `plugins` / `credentials`（凭据默认不勾） |
+| `credentialsEnvelope` | `false` | 开「密钥信封」：凭据加密成 `.credentials.yaml.enc` 上传（云端只有密文，需同一个口令还原，见 §5.3） |
 | `syncProfile` | 空 = 自动 | 装配文件用哪个 profile 名；新机器 profile 还没建时也可填 |
 | `stagingDir` | 空 = `D:\DSH-Backup`（存在时）否则 插件目录 `staging` | 包与解包临时区 |
 | `keyFile` | 空 = `staging\KEY.txt` | 本机口令文件 |
@@ -334,7 +361,9 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 ## 9. 安全
 
 - **同步是明文**：云端目录可以直接打开看。会话与附件里有隐私内容，介意就别同步这些目录。
-- **口令只在本机**：`KEY.txt` 不随同步上传（它在插件数据目录，不在同步白名单里）。丢了口令，旧包就永久打不开。
+- **口令只在本机**：`KEY.txt` 不随同步上传（它在插件数据目录，不在同步白名单里）。丢了口令，旧包与密钥信封就永久打不开。
+- **凭据建议走密钥信封**（§5.3）：`credentialsEnvelope: true` 时云端只有 `.credentials.yaml.enc`，明文 `.credentials.yaml` 不会被上传；不开信封又勾「登录凭据」则是明文上云。
+- 信封是 AES-256-GCM + scrypt(N=32768)，能防「云盘被别人看到」，不能防「口令也被拿到」。口令别和备份放在同一个盘里。
 - `KEY.txt` 写入用 `mode: 0o600`，但 **Windows 忽略 POSIX 权限位**，实际靠 `%USERPROFILE%` 的目录 ACL 保护。
 - 日志只记路径、文件数、耗时、退出码，不记口令与文件内容。
 - 路由只接受 loopback 请求，非本机地址一律 403。
@@ -392,6 +421,13 @@ node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口�
 
 ## 12. 变更记录
 
+### 0.5.3
+
+- **密钥信封（可选）**：把 `.credentials.yaml` 用口令加密成单文件 `.credentials.yaml.enc` 再上传，云端只有密文；换机器用同一个口令解出来写回本机。配置页「同步」卡一个勾选框（`credentialsEnvelope`），勾上后明文「登录凭据」自动置灰。
+- 新模块 `lib/envelope.mjs`：`seal/open`（magic `DSHKEY01` + salt(16) + nonce(12) + AES-256-GCM tag(16)，scrypt N=32768 r=8 p=1，AAD `dsh-credentials-v1`）、`sealFile`、`openToFile`（内容相同不重写，不同则先备份 `.credentials.yaml.bak-<时间戳>`）、`readPass/hasPass/credentialsPath`。
+- `lib/scripts/syncd.mjs`：`ENVELOPE` 开关打开时从 `syncFiles` 里剔除 `credentials`（不留明文副本），新增 `uploadEnvelope()` / `downloadEnvelope()`（索引按 size+mtime 比对，未变不重传；拉取走 `download --saveto 暂存 --ow -p 1` 再解密）；plan 与 `SYNC RESULT` 的 roots 计数 +1。
+- `/status` 与 `/sync` 都暴露 `envelope: { enabled, keyReady, keyFile, credentials, credentialsBytes, remotePath }`；`sanitizeConfig` 接受 `credentialsEnvelope` 布尔值；插件卡新增一行「登录凭据：不同步 / 缺口令 / 已开（云端只有密文）」。
+- 实测（真云盘，隔离 home）：plan 显示两行；`--mode upload` 上传 `task-board/ledger-v2.json` + `.credentials.yaml.enc`（160B），云端根目录只有密文、没有明文 `.credentials.yaml`；删掉本机凭据后 `--mode download` 解密还原，内容逐字节一致；错口令 → `[fail] 口令不对（或信封被改过），解密失败` + `[hint] 两台机器必须用同一个口令`，exit=4 且不写文件；本机已有不同内容 → 先备份 `.credentials.yaml.bak-20261028T021401` 再覆盖。smoke 增加信封往返/错口令/篡改/备份/`/status.envelope` 断言（`routes=20` 不变）。
 ### 0.5.2
 
 - **拉取时自动发现云端 profile 名**（回答「没有目录名，不能自己获取吗」）：从机不再假设云端也叫本机那个 profile。下载模式先 `aliyunpan ls <syncDir>/profiles` 拿到云端真实存在的目录名，再拼 `profiles/<云端名>/cordis.patch.yml` 等装配文件的云端路径；本机落点由映射规则决定（同名原样 / 两边都只有一个时 1:1 映射到本机那个 / 其它按云端名新建）。日志会打 `[info] 云端 profile: desktop、web` 和每条的映射说明。
