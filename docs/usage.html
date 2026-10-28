@@ -98,7 +98,7 @@ svg{max-width:100%;height:auto;display:block;margin:0 auto}
 <header class="hero">
   <h1>DSH 云同步 · 使用说明</h1>
   <p>把 DeepSeek Harness 的会话、附件、工作区索引、任务板，逐目录增量镜像到阿里云盘；换台电脑拉回来就能接着用。</p>
-  <div class="tags"><span>插件版本 0.5.1</span><span>同步主链路</span><span>插件内更新</span><span>附带包解码器</span><span>一主多从</span></div>
+  <div class="tags"><span>插件版本 0.5.2</span><span>同步主链路</span><span>插件内更新</span><span>附带包解码器</span><span>一主多从</span></div>
 </header>
 
 <section id="s1">
@@ -239,6 +239,16 @@ aliyunpan ls "/"       <span class="c"># 能列目录就算通了</span></code><
   </div>
 
   <div class="warn"><b>为什么不让 CLI 直接写 ~/.dsh</b>CLI 会自己多建一层 <code>DeepSeek Harness\DSH-Sync\</code> 目录，路径就错了；而且只有逐文件比对才能做到只写变化的部分。所以中间加了一层暂存目录。</div>
+
+  <h3>装配文件的 profile 名（0.5.2 起自动发现）</h3>
+  <p>模型配置与插件清单是 <code>profiles/&lt;profile&gt;/</code> 下的文件。从机不再假设云端叫本机那个名字：拉取前先 <code>ls</code> 云端 <code>profiles</code> 目录，拿到真实名字再拼路径，日志会打 <code>[info] 云端 profile: desktop、web</code>。</p>
+  <table>
+    <tr><th>云端</th><th>本机</th><th>落到哪里</th></tr>
+    <tr><td><code>desktop</code></td><td>有 <code>desktop</code></td><td>原样，<code>profiles/desktop/</code></td></tr>
+    <tr><td>只有 <code>desktop</code></td><td>只有 <code>solo</code></td><td><code>profiles/solo/</code>（两边都只有一个，1:1 映射）</td></tr>
+    <tr><td><code>desktop</code> + <code>web</code></td><td>只有一个或没有</td><td>按云端名各建目录，不合并</td></tr>
+  </table>
+  <p class="note-inline">多个云端 profile 不做合并：往同一个本机文件写两份会互相覆盖，宁可各建各的目录。</p>
 
   <h3>严格镜像（可选）</h3>
   <p>勾选 <code>syncPrune</code>（配置键 <code>syncPrune: true</code>）后，本机比云端多出来的文件会被删除，两边完全一致。适合「从机只读，不产生自己的数据」的用法。<b>第一次开之前先备份。</b></p>
@@ -444,7 +454,7 @@ node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --ou
     <tr><td>云端同步根</td><td><code>/DeepSeek Harness/DSH-Sync</code></td></tr>
     <tr><td>云端旧包目录</td><td><code>/DeepSeek Harness/DSH-Backup</code></td></tr>
   </table>
-  <p class="foot">插件版本 0.5.1 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
+  <p class="foot">插件版本 0.5.2 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
 </section>
 
 </main>

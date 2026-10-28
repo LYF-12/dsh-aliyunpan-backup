@@ -179,7 +179,16 @@ dsh plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup   # 等同�
 - 想连 Key 一起带走，得显式勾「登录凭据」。这是**明文上云**，只建议私有盘、自己的账号。
 - `profiles/` 整棵目录不能同步：里面是几十万个 `node_modules` 文件。插件清单的用途是**在另一台机器上照着重装**，不是直接拷文件。
 - 装配文件按**文件**比对（size + mtime），上传固定 `-ow` 覆盖，不会产生 `name(1).yml` 副本。
-- 「装配文件用哪个 profile」留空 = 本机第一个真实存在的 profile（跳过 `_bak-*`）。两台机器 profile 名字不一样时，在这一栏填对方的目录名（如 `desktop`）。
+- **上传**：「装配文件用哪个 profile」留空 = 本机第一个真实存在的 profile（跳过 `_bak-*`）。
+- **拉取（0.5.2 起）**：先 `ls <syncDir>/profiles` 问云端实际有哪些 profile，再去拼 `profiles/<云端名>/cordis.patch.yml`，所以不需要你在配置里填对方的目录名。落地时有三种情况，日志会逐条打出来：
+
+  | 云端 profile | 本机 profile | 落到哪里 |
+  | --- | --- | --- |
+  | `desktop` | 有同名 `desktop` | `profiles/desktop/`（原样） |
+  | 只有 `desktop` | 只有 `solo` | `profiles/solo/`（两边都只有一个，1:1 映射） |
+  | `desktop` + `web` | 只有 `solo` 或都没有 | 按云端名字各建 `profiles/desktop/`、`profiles/web/` |
+
+  多个云端 profile 不做合并映射：往同一个本机文件写两份会互相覆盖，宁可各建各的目录，你重启时自己选。
 
 ### 5.3 拉取（云端 → 从机）
 
@@ -194,6 +203,7 @@ aliyunpan download --saveto <暂存目录> --ow -p 3 <云端目录>
 - 默认**只增不删**：本机多出来的文件保持原样。
 - `syncPrune` 打开 = 严格镜像，会删本机多余文件。**先确认再开。**
 - 拉取前请先退出 DSH：正在运行的应用握着会话文件，Windows 上写盘会被拒。
+- 云端 profile 名会被自动发现（`[info] 云端 profile: desktop、web`），落地目录名按 §5.2 的规则映射，不用手动改配置。
 
 ### 5.4 多机与锁
 
@@ -382,6 +392,13 @@ node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口�
 
 ## 12. 变更记录
 
+### 0.5.2
+
+- **拉取时自动发现云端 profile 名**（回答「没有目录名，不能自己获取吗」）：从机不再假设云端也叫本机那个 profile。下载模式先 `aliyunpan ls <syncDir>/profiles` 拿到云端真实存在的目录名，再拼 `profiles/<云端名>/cordis.patch.yml` 等装配文件的云端路径；本机落点由映射规则决定（同名原样 / 两边都只有一个时 1:1 映射到本机那个 / 其它按云端名新建）。日志会打 `[info] 云端 profile: desktop、web` 和每条的映射说明。
+- 不做多对一合并：云端有两个以上 profile 时，如果都塞进本机唯一目录，`cordis.patch.yml` 会被后写的覆盖，看起来「模型同步了但配置不对」。宁可各建各的目录。
+- `lib/config.mjs`：新增 `mapProfileName(remoteName, localProfiles, remoteCount)`、`profileTargets(cfg, remoteNames)`；`syncRoots(cfg, { profiles })` 的 profile 文件根多了 `profile` / `localProfile` / `note` 三个字段（`name` 仍是云端相对路径，索引与日志格式不变）。
+- `lib/scripts/syncd.mjs`：新增 `remoteProfiles()`（`ls` + 按 `YYYY-MM-DD HH:MM:SS  名字/` 解析，跳过 `_`/`.` 开头），只在 `--mode download` 生效；plan/upload 行为不变。
+- 覆盖四种组合的实测（本地 [solo] / 云端 [desktop]、[solo]/[desktop,web]、[desktop]/[desktop,web]、[]/[desktop]）都按上表落地；smoke 增加对应断言（`routes=20` 不变）。
 ### 0.5.1
 
 - **登录卡**（另一台机器「已拉取，没效果」的直接原因）：那台机器没登录阿里云盘，`aliyunpan download` 直接 panic（`invalid memory address`），旧代码把「命令挂了」当成「云端没有这个目录」静默跳过，于是 11 个根全打印「云端还没有这个目录，跳过」，`files=0 failed=0` —— 看上去像同步没事，其实一个字节都没动。

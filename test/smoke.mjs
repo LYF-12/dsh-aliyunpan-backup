@@ -436,4 +436,29 @@ const walk = (node) => {
 walk(inner);
 assert.deepEqual(hrefs, [], 'no target=_blank anchor (popup-blocked in the host)');
 
+
+// ---- 云端 profile 自动发现（0.5.2）：下载时按云端实际名字拼路径，落地名按 1:1 规则映射 ----
+const cfgMod = await import(new URL('../lib/config.mjs', import.meta.url).href);
+const fakeDsh = path.join(tmpHome, 'dsh-fake');
+fs.mkdirSync(path.join(fakeDsh, 'profiles', 'solo'), { recursive: true });
+fs.writeFileSync(path.join(tmpHome, 'config.json'), JSON.stringify({ dshHome: fakeDsh }), 'utf8');
+const cfgNow = cfgMod.readConfig();
+assert.equal(cfgNow.dshHome, fakeDsh, 'readConfig honours config.json dshHome');
+
+const oneToOne = cfgMod.syncRoots(cfgNow, { profiles: ['desktop'] });
+const mappedFiles = oneToOne.filter((r) => r.kind === 'file' && r.profile);
+assert.ok(mappedFiles.length >= 4, 'profile file roots exist: ' + mappedFiles.length);
+assert.ok(mappedFiles.every((r) => r.profile === 'desktop'), 'remote keeps the cloud name');
+assert.ok(mappedFiles.every((r) => r.localProfile === 'solo'), '1:1 mapping lands on the local profile');
+assert.ok(mappedFiles.every((r) => r.local.includes(path.join('profiles', 'solo'))), 'local path uses the local profile');
+assert.ok(mappedFiles.every((r) => r.remote.endsWith('/profiles/desktop/' + path.basename(r.local))), 'remote path uses the cloud profile');
+assert.ok(mappedFiles.every((r) => /只有一个 profile/.test(r.note)), '1:1 mapping is explained in the note');
+// 云端有多个 profile 时不能映射到唯一本机 profile（会互相覆盖），各建各的目录
+const manyRemote = cfgMod.syncRoots(cfgNow, { profiles: ['desktop', 'web'] });
+const manyFiles = manyRemote.filter((r) => r.kind === 'file' && r.profile);
+assert.ok(manyFiles.every((r) => r.localProfile === r.profile), 'multiple cloud profiles keep their own names');
+assert.deepEqual([...new Set(manyFiles.map((r) => r.profile))].sort(), ['desktop', 'web'], 'both cloud profiles are covered');
+// 目录根不带 profile 字段（回归：别把 dir 也当成装配文件）
+assert.ok(oneToOne.filter((r) => r.kind === 'dir').every((r) => r.profile === undefined), 'dir roots have no profile field');
+
 console.log('SMOKE OK  routes=' + routes.size + '  home=' + tmpHome);
