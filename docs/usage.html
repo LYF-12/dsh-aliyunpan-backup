@@ -98,7 +98,7 @@ svg{max-width:100%;height:auto;display:block;margin:0 auto}
 <header class="hero">
   <h1>DSH 云同步 · 使用说明</h1>
   <p>把 DeepSeek Harness 的会话、附件、工作区索引、任务板，逐目录增量镜像到阿里云盘；换台电脑拉回来就能接着用。</p>
-  <div class="tags"><span>插件版本 0.5.3</span>
+  <div class="tags"><span>插件版本 0.5.4</span>
   <span>密钥信封</span><span>同步主链路</span><span>插件内更新</span><span>附带包解码器</span><span>一主多从</span></div>
 </header>
 
@@ -266,6 +266,24 @@ node lib/scripts/syncd.mjs --mode download   <span class="c"># 下载密文并�
 
   <h3>严格镜像（可选）</h3>
   <p>勾选 <code>syncPrune</code>（配置键 <code>syncPrune: true</code>）后，本机比云端多出来的文件会被删除，两边完全一致。适合「从机只读，不产生自己的数据」的用法。<b>第一次开之前先备份。</b></p>
+
+  <h3>工作区路径重映射（0.5.4 起）</h3>
+  <p><code>storages/workspace.json</code> 把工作区记成<b>绝对路径</b>（<code>D:\Code\deepseek\cs</code>）。换台电脑这些目录往往不存在，DSH 打开时工作区是空的。所以在拉取结束（且本次含 <code>storages</code>）后会自动改：</p>
+  <table>
+    <tr><th>顺序</th><th>候选</th><th>说明</th></tr>
+    <tr><td>1</td><td>手动映射</td><td>配置页「工作区路径映射」，一行一条 <code>原前缀=&gt;新前缀</code>（也认 <code>-&gt;</code>，<code>#</code> 是注释）</td></tr>
+    <tr><td>2</td><td>换盘符</td><td><code>X:\a\b</code> 的盘符不存在时，试本机其它存在的盘符</td></tr>
+    <tr><td>3</td><td>用户目录</td><td><code>&lt;用户&gt;\Documents\&lt;目录名&gt;</code>、<code>&lt;用户&gt;\&lt;目录名&gt;</code></td></tr>
+  </table>
+  <p class="note-inline">只采用 <code>exists()</code> 为真的候选；本机已经存在的路径一律不动；找不到的保持原样并打 <code>[warn]</code>，不会让同步失败。改之前把原文件备份成 <code>workspace.json.bak-&lt;时间戳&gt;</code>，结果另写 <code>workspace-remap.json</code>。</p>
+  <pre><code><span class="c"># 日志会长这样</span>
+[info] 工作区「测试」路径：Z:\Code\deepseek\cs → D:\Code\deepseek\cs（手动映射 Z:\Code =&gt; D:\Code）
+[warn] 工作区「无解」本机不存在：Z:\Nope\zzz
+[hint] 自动找不到替代位置，可在配置页「工作区路径映射」里写一行 原前缀=&gt;新前缀，再拉一次。</code></pre>
+  <p>不想要这一步：取消勾选「拉取后把工作区路径改到本机」（<code>workspaceRemap: false</code>）。手工改过本机工作区列表的话，先退出 DSH 再拉，避免被写回去。</p>
+
+  <h3>不同步的 profile</h3>
+  <p><code>syncProfileExclude</code> 填 <code>abtest, tmp</code> 这样的名字（逗号/分号/空格分隔，最多 20 个），这些 profile 的装配文件不会被上传，测试 profile 也就不会在别的机器上多建一个目录。</p>
 </section>
 
 <section id="s5">
@@ -382,6 +400,9 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "&lt;云端路径&gt;"
     <tr><td><code>syncPrune</code></td><td><code>false</code></td><td>拉取时删本机多余文件</td></tr>
 <tr><td><code>syncFiles</code></td><td><code>[model, plugins]</code></td><td>装配文件：<code>model</code> 模型配置、<code>plugins</code> 插件清单、<code>credentials</code> 登录凭据（默认不勾）</td></tr>
 <tr><td><code>credentialsEnvelope</code></td><td><code>false</code></td><td>开「密钥信封」：凭据加密成 <code>.credentials.yaml.enc</code> 上传，云端只有密文，换机器需同一口令</td></tr>
+<tr><td><code>workspaceRemap</code></td><td><code>true</code></td><td>拉取后自动重映射工作区路径（换盘符 / Documents / 手动映射）</td></tr>
+<tr><td><code>workspaceMap</code></td><td>空</td><td>手动映射，一行一条 <code>原前缀=&gt;新前缀</code>（如 <code>D:\Code=&gt;C:\Work\Code</code>）</td></tr>
+<tr><td><code>syncProfileExclude</code></td><td>空</td><td>不同步的 profile 名，逗号分隔（如 <code>abtest, tmp</code>）</td></tr>
 <tr><td><code>syncProfile</code></td><td>空 = 自动</td><td>装配文件用哪个 profile 名；新机器还没建 profile 时也能填</td></tr>
     <tr><td><code>stagingDir</code></td><td>空 = 自动</td><td>包与解包临时区</td></tr>
     <tr><td><code>keyFile</code></td><td>空 = <code>staging\KEY.txt</code></td><td>本机口令文件</td></tr>
@@ -469,7 +490,7 @@ node lib/scripts/restore.mjs --pkg &lt;payload.enc&gt; --key &lt;口令&gt; --ou
     <tr><td>云端同步根</td><td><code>/DeepSeek Harness/DSH-Sync</code></td></tr>
     <tr><td>云端旧包目录</td><td><code>/DeepSeek Harness/DSH-Backup</code></td></tr>
   </table>
-  <p class="foot">插件版本 0.5.3 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
+  <p class="foot">插件版本 0.5.4 · MIT License · <a href="https://github.com/LYF-12/dsh-aliyunpan-backup">github.com/LYF-12/dsh-aliyunpan-backup</a></p>
 </section>
 
 </main>

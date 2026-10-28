@@ -24,6 +24,7 @@
 | 解包加密包 | 可用 | 默认落到暂存目录，不覆盖 `.dsh`，人工挑回 |
 | 按模块勾选同步内容 | 可用 | 10 个白名单目录多选 + 3 类装配文件（模型配置 / 插件清单 / 凭据），仍不支持任意路径 |
 | 凭据加密同步（密钥信封） | 可用（0.5.3） | 可选：`.credentials.yaml` 用口令加密成 `.credentials.yaml.enc` 上传，云端只有密文，换机同口令还原（见 §5.3） |
+| 工作区路径重映射 | 可用（0.5.4） | 从机拉取后自动把 `workspace.json` 里本机不存在的绝对路径换到能用的位置（换盘符 / Documents / 手动前缀映射），改前留 `.bak`（见 §5.5） |
 | 路径手输 / 系统选择框 | 可用 | 配置页每个路径旁边都有「浏览…」，弹 Windows 原生文件夹/文件对话框 |
 | 打包 + 加密 + 上传 | **已移除**（0.4.0） | 上传交给同步链路；旧包仍可解码 |
 | 双向实时同步 | 不支持 | 需要手动点「开始同步」，多机靠锁与索引避免互相踩 |
@@ -138,6 +139,8 @@ dsh plugin --profile desktop add github:LYF-12/dsh-aliyunpan-backup   # 等同�
 - 文件类（`KEY.txt`、`payload.enc`、`aliyunpan.exe`）→ **浏览…**（OpenFileDialog）
 - 包卡片单独给「选文件夹…」「选文件…」两个，因为包既可能是一个目录，也可能直接是 `payload.enc`
 
+「同步」卡除了目录与装配文件，还有四项（见 §5.3 / §5.5）：加密同步登录凭据（密钥信封）、拉取后把工作区路径改到本机、工作区路径映射、不同步的 profile。
+
 对话框由宿主进程拉起的 PowerShell 弹出，选完自动回填；没有桌面会话或非 Windows 时直接手输，功能不受影响。
 
 ---
@@ -230,20 +233,53 @@ aliyunpan download --saveto <暂存目录> --ow -p 3 <云端目录>
 - `syncPrune` 打开 = 严格镜像，会删本机多余文件。**先确认再开。**
 - 拉取前请先退出 DSH：正在运行的应用握着会话文件，Windows 上写盘会被拒。
 - 云端 profile 名会被自动发现（`[info] 云端 profile: desktop、web`），落地目录名按 §5.2 的规则映射，不用手动改配置。
+- 拉取完会自动处理工作区路径（0.5.4 起）：`workspace.json` 里那些本机不存在的绝对路径会被改到能找到的位置，改前备份（见 §5.5）。
 
-### 5.5 多机与锁
+### 5.5 工作区路径重映射（0.5.4 起）
+
+`storages/workspace.json` 把每个工作区记成**绝对路径**（`D:\Code\deepseek\cs` 这种）。换一台电脑，这些盘符/目录往往不存在，DSH 打开时工作区是空的、路径无效 —— 这一步在拉取后自动修。
+
+拉取结束（且本次同步包含 `storages`）时会：
+
+1. 读本机 `<dshHome>/storages/workspace.json`；
+2. 对每个工作区路径依次尝试候选：**手动映射**（你自己的前缀规则）→ **换盘符**（`X:\a\b` 的盘符不存在就试本机其它存在的盘符）→ `<用户>\Documents\<目录名>` → `<用户>\<目录名>`；
+3. 只采用 `exists()` 为真的候选；改之前把原文件备份成 `workspace.json.bak-<YYYYMMDDTHHMMSS>`；
+4. 结果写 `workspace-remap.json`，日志逐条打出来：
+
+```text
+[info] 工作区「测试」路径：Z:\Code\deepseek\cs → D:\Code\deepseek\cs（手动映射 Z:\Code => D:\Code）
+[warn] 工作区「无解」本机不存在：Z:\Nope\zzz
+[hint] 自动找不到替代位置，可在配置页「工作区路径映射」里写一行 原前缀=>新前缀，再拉一次。
+[info] 已改 1 个工作区路径；原文件备份：…\workspace.json.bak-20261028T030202
+```
+
+**手动映射**（配置页「工作区路径映射」，或 `workspaceMap`）：一行一条，`原前缀=>新前缀`，也接受 `->`，`#` 开头是注释。
+
+```text
+D:\Code=>C:\Work\Code        # 整个 D:\Code 树搬到 C:\Work\Code
+E:\Old -> F:\New
+```
+
+- 只做前缀替换：`D:\Code\deepseek\cs` 会变成 `C:\Work\Code\deepseek\cs`，然后仍然要 `exists()` 通过才采纳。
+- 本机已经存在的路径一律不动（所以同一台机器重复拉取不会来回改）。
+- 找不到替代位置的工作区**保持原样**，只在日志里 `[warn]`，不会让同步失败。
+- 不想要这一步：配置页取消勾选「拉取后把工作区路径改到本机」（`workspaceRemap: false`），`workspace.json` 原样落地。
+- `workspace.json` 是拉取时被覆盖的文件 —— 手工改过本机工作区列表的话，先退出 DSH 再拉，避免被写回去。
+
+**不同步的 profile**（`syncProfileExclude`）：填 `abtest, tmp` 这样的名字（逗号/分号/空格分隔，最多 20 个），本机会跳过这些 profile 的装配文件 —— 测试用的 profile 就不会传到别的机器上多建一个目录。云端已有同名目录的话需要手动删 `/DeepSeek Harness/DSH-Sync/profiles/<名字>`。
+### 5.6 多机与锁
 
 - 每台机器写入 `_last-sync-<机器名>.json`，借此判断「另一台机器最近是否同步过」。
 - `syncLockMinutes`（默认 60）内有其它机器活动时：默认只**告警**继续，`--strict` 下直接退出。
 - 两台机器同时上传同一批文件没有合并逻辑：**约定一台主机推、其它只拉**最省事。
 
-### 5.6 三个坑
+### 5.7 三个坑
 
 1. `Access is denied` / 暂存目录被拦 → 安全软件拦了 `aliyunpan.exe` 写盘。日志会打 `[hint]`，把 `syncDlDir` 换到允许的目录，或给 exe 加白。
 2. 不要用 `aliyunpan sync start`（CLI 自带同步）。它自己维护状态、和本插件的索引互相打架，行为不可预期。
 3. 先退出 DSH 再拉取，否则 `ledger-v2.lock` 之类的锁文件写不进去。
 
-### 5.7 命令行等价物
+### 5.8 命令行等价物
 
 ```powershell
 # 预演：只统计，不动云端
@@ -320,6 +356,9 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 | `syncPrune` | `false` | 拉取时删本机多余文件 |
 | `syncFiles` | `[model, plugins]` | 装配文件：`model` / `plugins` / `credentials`（凭据默认不勾） |
 | `credentialsEnvelope` | `false` | 开「密钥信封」：凭据加密成 `.credentials.yaml.enc` 上传（云端只有密文，需同一个口令还原，见 §5.3） |
+| `workspaceRemap` | `true` | 拉取后自动重映射工作区路径（见 §5.5） |
+| `workspaceMap` | 空 | 手动映射，一行一条 `原前缀=>新前缀`（如 `D:\Code=>C:\Work\Code`） |
+| `syncProfileExclude` | 空 | 不同步的 profile 名，逗号分隔（如 `abtest, tmp`） |
 | `syncProfile` | 空 = 自动 | 装配文件用哪个 profile 名；新机器 profile 还没建时也可填 |
 | `stagingDir` | 空 = `D:\DSH-Backup`（存在时）否则 插件目录 `staging` | 包与解包临时区 |
 | `keyFile` | 空 = `staging\KEY.txt` | 本机口令文件 |
@@ -388,6 +427,8 @@ aliyunpan download --saveto "D:\DSH-Backup\snapshots" "<云端路径>"
 
 **Q：另一台机器点「从机拉取」，11 个根全是「云端还没有这个目录/文件，跳过」？** 先看配置页「阿里云盘账号」是不是「已登录」且昵称/UID 与主机一致 —— 没登录时 `aliyunpan download` 会 panic，旧版本会把它当成「云端没有」静默跳过（0.5.1 起直接报错 `exit 4`）。账号没问题再核对同步目录名（`syncDir`）和主机是否真的上传过。
 
+**Q：从机拉取后工作区全打不开 / 路径无效？** `workspace.json` 里存的是绝对路径，换机后原路径不存在。0.5.4 起拉取结束会自动改：先试你的「工作区路径映射」，再试换盘符、`Documents\<目录名>`、`<用户>\<目录名>`，只改 `exists()` 为真的；改前备份成 `workspace.json.bak-<时间戳>`，改不动的原样保留并在日志里 `[warn]`。
+
 **Q：还要备份加密包吗？** 0.4.0 起不做打包上传了。要异地留档：同步一份明文，或自行打包后传到云盘再解码。
 
 ---
@@ -420,6 +461,14 @@ node test/e2e.mjs              # 造一个真实加密包 → 校验 → 错口�
 ---
 
 ## 12. 变更记录
+
+### 0.5.4
+
+- **拉取后自动重映射工作区路径**：`storages/workspace.json` 里的绝对路径（`D:\Code\…`）换机后不存在，DSH 工作区全空。新增 `lib/workspace.mjs`（`parseMap` / `candidatesFor` / `planRemap` / `applyRemap` / `remapWorkspaces` / `workspaceSummary`），候选顺序：手动前缀映射 → 换盘符 → `Documents\<目录名>` → `<用户>\<目录名>`，只采纳 `exists()` 为真的；改前备份 `workspace.json.bak-<YYYYMMDDTHHMMSS>`，报告写 `workspace-remap.json`，`sync-state.json` 的 `workspace` 记 `{remapped,unresolved,backup,error}`。
+- **不同步的 profile**（`syncProfileExclude`）：逗号/分号/空格分隔最多 20 个名字，`profileNames()` 过滤掉它们，测试 profile 不再传染到别的机器。
+- 新配置 `workspaceRemap`（默认 true）/ `workspaceMap`（`原前缀=>新前缀`，也认 `->`，`#` 注释）/ `syncProfileExclude`；`/status` 与 `/sync` 都暴露 `workspace: {file,total,missing,remap,mapRules,last}`；配置页「同步」卡新增勾选框 + 两个输入框 + 一行状态（「本机工作区 N 个 · 其中 M 个路径不存在 · 上次重映射 X 个」）；插件卡新增「工作区」一行。
+- 实测（真云盘，临时 home + 临时云目录）：上传一份含 `Z:\…` 的 workspace.json（296B）→ 删本机文件 → `--mode download` 打出 `[info] 工作区「测试」路径：Z:\Code\deepseek\cs → D:\Code\deepseek\cs（手动映射 Z:\Code => D:\Code）`、`[warn] 工作区「无解」本机不存在：Z:\Nope\zzz` + hint、`[info] 已改 1 个工作区路径；原文件备份：…\workspace.json.bak-20261028T030202`，回读 w1 已改写、w2 原样、`title`/`sessionIds` 保留，`sync-state.json` 的 workspace 为 `{"remapped":1,"unresolved":1,…}`。本机真实 6 个工作区路径都存在，所以在本机跑不改任何路径。smoke 增加 `parseMap` / `planRemap` 4 用例 / `remapWorkspaces` 集成（含二次运行 remapped=0）/ `/status.workspace` / `profileExcludeList` 断言（`routes=20` 不变）。
+- 顺手清理云端测试残留：`DSH-Sync/profiles/abtest`、`_last-sync-AB-TEST.json`、`DSH-Sync-test-notexist` 已删（云盘回收站可找回），本机 `profiles/abtest` 也删了。
 
 ### 0.5.3
 

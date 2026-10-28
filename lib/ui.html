@@ -184,6 +184,16 @@
       <input type="checkbox" id="credentialsEnvelope"> 加密同步登录凭据（密钥信封：用口令把 .credentials.yaml 加密后单独上传，云端只有密文）
     </label>
     <div id="envelopeHint" class="hint" style="margin-top:4px"></div>
+    <label class="hint" style="display:block;margin-top:6px">
+      <input type="checkbox" id="workspaceRemap"> 拉取后把工作区路径改到本机（换机器后 D:\... 往往不存在；自动找替代位置，改前留 .bak）
+    </label>
+    <label class="field" style="margin-top:8px">工作区路径映射（可选，每行 原前缀=>新前缀）
+      <input type="text" id="workspaceMap" placeholder="D:\Code=>C:\Work\Code">
+    </label>
+    <label class="field" style="margin-top:8px">不同步的 profile（逗号分隔）
+      <input type="text" id="syncProfileExclude" placeholder="例如 abtest；避免测试 profile 传到别的机器">
+    </label>
+    <div id="workspaceHint" class="hint" style="margin-top:4px"></div>
     <div id="syncDirs" class="row" style="margin-top:12px"></div>
     <div class="hint" style="margin-top:10px">配置文件（不带整棵 profiles / node_modules，只传装配需要的几个文件）</div>
     <div id="syncFiles" class="row"></div>
@@ -579,6 +589,22 @@ function applyEnvelopeUi(env) {
   hint.textContent = parts.join(' · ');
 }
 
+function applyWorkspaceUi(ws) {
+  const hint = $("workspaceHint");
+  if (!hint) return;
+  const parts = [];
+  const data = ws || {};
+  if (!data.total) parts.push("本机还没有工作区列表（storages/workspace.json 为空或没同步 storages）");
+  else {
+    parts.push("本机工作区 " + data.total + " 个");
+    if (data.missing && data.missing.length) parts.push("其中 " + data.missing.length + " 个路径不存在");
+    else parts.push("路径都在");
+  }
+  if (data.last && data.last.at) parts.push("上次重映射 " + data.last.remapped + " 个" + (data.last.unresolved ? " · " + data.last.unresolved + " 个找不到替代" : ""));
+  if (data.mapRules) parts.push("手动映射 " + data.mapRules + " 条");
+  hint.textContent = parts.join(" · ");
+}
+
 function fillSync(data) {
   $('syncMode').value = data.mode || 'upload';
   $('syncDir').value = data.dir || '';
@@ -588,6 +614,10 @@ function fillSync(data) {
   if (document.activeElement !== $('syncProfile')) $('syncProfile').value = (data.config && data.config.syncProfile) || '';
   $('syncPrune').checked = data.prune === true;
   $('credentialsEnvelope').checked = !!(data.envelope && data.envelope.enabled);
+  $('workspaceRemap').checked = !(data.config && data.config.workspaceRemap === false);
+  if (document.activeElement !== $('workspaceMap')) $('workspaceMap').value = (data.config && data.config.workspaceMap) || '';
+  if (document.activeElement !== $('syncProfileExclude')) $('syncProfileExclude').value = (data.config && data.config.syncProfileExclude) || '';
+  applyWorkspaceUi(data.workspace || {});
   renderSyncDirs(data);
   renderSyncFiles(data);
   applyEnvelopeUi(data.envelope || {});
@@ -655,6 +685,9 @@ async function saveSyncQuiet() {
       syncDlDir: $('syncDlDir').value.trim(),
       syncPrune: $('syncPrune').checked,
       credentialsEnvelope: $('credentialsEnvelope').checked,
+      workspaceRemap: $('workspaceRemap').checked,
+      workspaceMap: $('workspaceMap').value,
+      syncProfileExclude: $('syncProfileExclude').value.trim(),
       syncProfile: $('syncProfile').value.trim(),
       syncDirs: pickedSyncDirs(),
       syncFiles: pickedSyncFiles(),
@@ -907,6 +940,9 @@ $('btnSyncPlan').onclick = planSyncRun;
 $('btnSyncRun').onclick = runSync;
 $('btnSyncSave').onclick = saveSyncQuiet;
 $('credentialsEnvelope').onchange = saveSyncQuiet;
+$('workspaceRemap').onchange = saveSyncQuiet;
+$('workspaceMap').onchange = saveSyncQuiet;
+$('syncProfileExclude').onchange = saveSyncQuiet;
 $('btnSyncCancel').onclick = async () => {
   try { await api('/sync/cancel', { method: 'POST' }); refreshSync(); }
   catch (error) { $('syncHint').textContent = String(error.message || error); }

@@ -514,4 +514,66 @@ const envOn = await call(base + "/config", { method: "POST", body: { credentials
 assert.equal(envOn.json.config.credentialsEnvelope, true, "credentialsEnvelope saved");
 const envStatusOn = await call(base + "/status");
 assert.equal(envStatusOn.json.envelope.enabled, true, "envelope switch is visible in /status");
+// ---- 工作区路径重映射（0.5.4）：换机器后 D:\... 不存在时改到本机能找到的位置 ----
+const wsMod = await import(new URL('../lib/workspace.mjs', import.meta.url).href);
+const rules = wsMod.parseMap('# 注释行会被忽略\nD:\\Code=>C:\\Work\\Code\nE:\\Old -> F:\\New\n坏行没有箭头');
+assert.equal(rules.length, 2, 'parseMap reads two rules: ' + JSON.stringify(rules));
+assert.equal(rules[0].from, 'D:\\Code', 'first rule from');
+assert.equal(rules[1].to, 'F:\\New', 'second rule to (-> syntax)');
+
+const existSet = new Set(['C:\\Work\\Code\\deepseek', 'D:\\Proj\\app', path.join(tmpHome, 'Documents', 'life')]);
+const fakeExists = (p) => existSet.has(p);
+const planA = wsMod.planRemap([
+  { id: 'a', title: '本地有', path: 'C:\\Work\\Code\\deepseek' },
+  { id: 'b', title: '要换盘符', path: 'X:\\Proj\\app' },
+  { id: 'c', title: '靠手动映射', path: 'D:\\Code\\deepseek' },
+  { id: 'd', title: '找不到', path: 'Y:\\Nope\\zzz' },
+], { exists: fakeExists, map: rules, drives: ['D:'], home: tmpHome });
+assert.equal(planA.changes.length, 2, 'two paths can be remapped: ' + JSON.stringify(planA.changes));
+assert.equal(planA.skipped.length, 1, 'existing path is skipped');
+assert.equal(planA.unresolved.length, 1, 'hopeless path is reported unresolved');
+const byId = new Map(planA.changes.map((c) => [c.id, c]));
+assert.equal(byId.get('b').to, 'D:\\Proj\\app', 'drive swap candidate');
+assert.match(byId.get('b').why, /换盘符/, 'drive swap reason');
+assert.equal(byId.get('c').to, 'C:\\Work\\Code\\deepseek', 'manual prefix map candidate');
+assert.match(byId.get('c').why, /手动映射/, 'manual map reason');
+
+const remapHome = path.join(tmpHome, 'dsh-remap');
+const keepDir = path.join(remapHome, 'keep-me');
+const mappedDir = path.join(remapHome, 'mapped', 'proj');
+fs.mkdirSync(keepDir, { recursive: true });
+fs.mkdirSync(mappedDir, { recursive: true });
+fs.mkdirSync(path.join(remapHome, 'storages'), { recursive: true });
+const wsFile = path.join(remapHome, 'storages', 'workspace.json');
+fs.writeFileSync(wsFile, JSON.stringify({ tables: { workspaces: {
+  w1: { path: keepDir, title: '保留', sessionIds: [] },
+  w2: { path: 'X:\\Ghost\\proj', title: '映射', sessionIds: [] },
+  w3: { path: 'Y:\\Nope\\zzz', title: '无解', sessionIds: [] },
+} } }), 'utf8');
+const report = wsMod.remapWorkspaces({ dshHome: remapHome, workspaceMap: 'X:\\Ghost=>' + path.join(remapHome, 'mapped') });
+assert.equal(report.remapped.length, 1, 'one workspace remapped: ' + JSON.stringify(report.remapped));
+assert.equal(report.unresolved.length, 1, 'one workspace unresolved');
+assert.ok(report.backup && fs.existsSync(report.backup), 'workspace.json backed up before rewrite');
+const after = JSON.parse(fs.readFileSync(wsFile, 'utf8'));
+assert.equal(after.tables.workspaces.w1.path, keepDir, 'existing path untouched');
+assert.equal(after.tables.workspaces.w2.path, mappedDir, 'mapped path rewritten');
+assert.equal(after.tables.workspaces.w3.path, 'Y:\\Nope\\zzz', 'unresolved path kept as-is');
+assert.equal(after.tables.workspaces.w2.title, '映射', 'other fields preserved');
+assert.ok(fs.existsSync(path.join(remapHome, 'workspace-remap.json')), 'remap report written');
+const again = wsMod.remapWorkspaces({ dshHome: remapHome, workspaceMap: 'X:\\Ghost=>' + path.join(remapHome, 'mapped') });
+assert.equal(again.remapped.length, 0, 'second run is a no-op');
+assert.equal(again.backup, '', 'no backup when nothing changes');
+
+const wsStatus = await call(base + '/status');
+assert.equal(typeof wsStatus.json.workspace.remap, 'boolean', '/status exposes workspace.remap');
+assert.equal(typeof wsStatus.json.workspace.total, 'number', '/status exposes workspace.total');
+assert.equal(Array.isArray(wsStatus.json.workspace.missing), true, '/status exposes workspace.missing');
+const wsConfig = await call(base + '/config', { method: 'POST', body: { workspaceRemap: false, workspaceMap: 'D:\\Code=>C:\\Code', syncProfileExclude: 'abtest, tmp' } });
+assert.equal(wsConfig.json.config.workspaceRemap, false, 'workspaceRemap saved');
+assert.equal(wsConfig.json.config.syncProfileExclude, 'abtest, tmp', 'syncProfileExclude saved');
+const cfgAfter = cfgMod.readConfig();
+assert.equal(cfgAfter.workspaceRemap, false, 'workspaceRemap normalised');
+assert.deepEqual(cfgMod.profileExcludeList(cfgAfter), ['abtest', 'tmp'], 'excluded profiles parsed');
+assert.equal(cfgMod.profileNames(cfgAfter).includes('abtest'), false, 'excluded profile is not synced');
+
 console.log('SMOKE OK  routes=' + routes.size + '  home=' + tmpHome);
