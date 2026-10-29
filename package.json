@@ -1,6 +1,6 @@
 {
   "name": "dsh-aliyunpan-backup",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "把 DeepSeek Harness 数据备份/同步到阿里云盘的 DSH 插件；可选密钥信封（AES-256-GCM 加密同步登录凭据）；映射与合并工作区、拉取不覆盖本机更新、可诊断运行日志与同步看门狗；零运行时依赖",
   "type": "module",
   "engines": {
