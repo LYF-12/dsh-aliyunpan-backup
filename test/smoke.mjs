@@ -336,6 +336,14 @@ assert.equal(typeof syncGet.json.timeout.maxMinutes, 'number', '/sync exposes ma
 assert.ok(String(syncGet.json.state.jobPath || '').endsWith('sync-job.json'), '/sync exposes jobPath');
 assert.ok(Array.isArray(syncGet.json.log.lines), '/sync still carries a log tail');
 
+// 0.6.3：/status 的 sync 必须带上看门狗字段，否则卡片看不到「卡住 / 中断 / 孤儿进程」
+const syncWatch = await call(base + '/status');
+assert.equal(typeof syncWatch.json.sync.job, 'object', '/status exposes sync.job');
+assert.ok('orphan' in syncWatch.json.sync, '/status exposes sync.orphan');
+assert.equal(typeof syncWatch.json.sync.timeout.idleMinutes, 'number', '/status exposes sync.timeout');
+assert.equal(typeof syncWatch.json.sync.runningSec, 'number', '/status exposes sync.runningSec');
+assert.ok('last' in syncWatch.json.sync, '/status exposes sync.last');
+
 const sr = await import(new URL('../lib/syncrun.mjs', import.meta.url).href);
 assert.equal(typeof sr.judgeStall, 'function', 'judgeStall exported');
 assert.deepEqual(
